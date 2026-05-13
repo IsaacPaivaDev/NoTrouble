@@ -1,0 +1,27 @@
+🛠️ README Técnico: Notrouble (V. 1.0 - Core)
+Este documento descreve a fundação tecnológica do ecossistema Notrouble construída até agora.
+
+🧬 Arquitetura do Sistema
+Backend: Python 3 + Django & Django Ninja (API de alta performance).
+
+Frontend: React (Vite) + TailwindCSS (Estilização Utilitária).
+
+Banco de Dados: PostgreSQL (Relacional, pronto para escala).
+
+Design Pattern: Multi-Tenant (Uma única base que isola dados por empresa/cliente).
+
+🚀 Funcionalidades Implementadas
+Core API: Sistema de rotas otimizado com documentação automática (Swagger).
+
+Kanban Engine: Estrutura de Quadros (Boards), Etapas (Stages) e Cartões (Cards).
+
+DND (Drag and Drop): Sistema de movimentação de cards nativo com persistência em banco de dados.
+
+Internacionalização (i18n): Suporte completo para troca dinâmica entre PT-BR e EN-US.
+
+Roteamento: Gerenciamento de páginas (Login e Dashboard) via React Router.
+
+📂 Estrutura de Pastas
+/backend: Contém a lógica de negócios, modelos de dados e API.
+
+/frontend: Contém a interface do usuário, dicionários de tradução e estados globais.

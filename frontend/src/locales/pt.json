@@ -1,0 +1,8 @@
+{
+  "email": "E-mail",
+  "password": "Senha",
+  "login_btn": "Entrar no Sistema",
+  "add_card": "Adicionar Card",
+  "empty_stage": "Nenhum card nesta etapa...",
+  "drop_here": "Solte os cards aqui..."
+}
