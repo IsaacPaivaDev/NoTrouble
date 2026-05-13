@@ -1,27 +1,43 @@
-🛠️ README Técnico: Notrouble (V. 1.0 - Core)
-Este documento descreve a fundação tecnológica do ecossistema Notrouble construída até agora.
+# NoTrouble - Sandbox Enterprise SaaS 🚀
 
-🧬 Arquitetura do Sistema
-Backend: Python 3 + Django & Django Ninja (API de alta performance).
+[Português](#português) | [English](#english)
 
-Frontend: React (Vite) + TailwindCSS (Estilização Utilitária).
+---
 
-Banco de Dados: PostgreSQL (Relacional, pronto para escala).
+## Português
 
-Design Pattern: Multi-Tenant (Uma única base que isola dados por empresa/cliente).
+### Sobre o Projeto
+O **NoTrouble** é uma plataforma SaaS completa de gestão de fluxo de trabalho estilo "Sandbox", projetada para escala enterprise. O sistema permite que empresas gerenciem projetos através de um Kanban altamente interativo, com forte foco em indicadores financeiros (OKRs) e personalização white-label.
 
-🚀 Funcionalidades Implementadas
-Core API: Sistema de rotas otimizado com documentação automática (Swagger).
+### Funcionalidades Principais
+- **Kanban Interativo (Trello Style):** Sistema de Drag & Drop com projeção ao vivo de movimento para colunas e cartões [cite: Board.jsx].
+- **Gestão de OKRs e Analytics:** Dashboards automáticos que calculam saúde do quadro, produtividade e métricas financeiras (Previsto vs. Investido) em tempo real [cite: analytics.py, Dashboard.jsx].
+- **Arquitetura Multi-Tenant & RBAC:** Controle de acesso baseado em cargos (Administrador, Gerencial, Operacional). Membros operacionais possuem visão restrita aos seus próprios indicadores [cite: endpoints.py, models.py].
+- **Gestão de Equipe e Licenças:** Sistema de convites via e-mail com controle de licenças ativas por empresa [cite: Team.jsx, endpoints.py].
+- **Customização White-label:** Personalização completa de temas hexadecimais, papéis de parede e nomes de workspace para que o cliente se sinta dono da plataforma [cite: Settings.jsx, Dashboard.jsx, endpoints.py].
+- **Perfil de Usuário:** Upload de foto de perfil e gestão de dados cadastrais [cite: Settings.jsx, endpoints.py].
 
-Kanban Engine: Estrutura de Quadros (Boards), Etapas (Stages) e Cartões (Cards).
+### 🛠️ Tecnologias
+- **Backend:** Python, Django, Django Ninja (API de alta performance).
+- **Frontend:** React.js, Tailwind CSS, Vite.
+- **Banco de Dados:** PostgreSQL.
 
-DND (Drag and Drop): Sistema de movimentação de cards nativo com persistência em banco de dados.
+---
 
-Internacionalização (i18n): Suporte completo para troca dinâmica entre PT-BR e EN-US.
+## English
 
-Roteamento: Gerenciamento de páginas (Login e Dashboard) via React Router.
+### About the Project
+**NoTrouble** is a comprehensive "Sandbox" style SaaS workflow management platform, designed for enterprise scale. The system allows companies to manage projects through a highly interactive Kanban, with a strong focus on financial indicators (OKRs) and white-label customization.
 
-📂 Estrutura de Pastas
-/backend: Contém a lógica de negócios, modelos de dados e API.
+### Key Features
+- **Interactive Kanban (Trello Style):** Drag & Drop system with live movement projection for both columns and cards [cite: Board.jsx].
+- **OKRs & Analytics Management:** Automatic dashboards calculating board health, productivity, and financial metrics (Estimated vs. Invested) in real-time [cite: analytics.py, Dashboard.jsx].
+- **Multi-Tenant Architecture & RBAC:** Role-Based Access Control (Admin, Manager, Operational). Operational members have a restricted view of their own performance indicators [cite: endpoints.py, models.py].
+- **Team & License Management:** Email-based invitation system with active license control per company [cite: Team.jsx, endpoints.py].
+- **White-label Customization:** Full hex theme customization, wallpapers, and workspace naming to ensure the client feels like the platform owner [cite: Settings.jsx, Dashboard.jsx, endpoints.py].
+- **User Profile:** Profile picture upload and personal data management [cite: Settings.jsx, endpoints.py].
 
-/frontend: Contém a interface do usuário, dicionários de tradução e estados globais.
+### Tech Stack
+- **Backend:** Python, Django, Django Ninja (High-performance API).
+- **Frontend:** React.js, Tailwind CSS, Vite.
+- **Database:** PostgreSQL.
