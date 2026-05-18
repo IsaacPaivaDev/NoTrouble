@@ -1,78 +1,93 @@
-const API_BASE_URL = 'http://127.0.0.1:8000/api'
+// 🚀 BASE URL via variável de ambiente do Vite
+// IMPORTANTE: variáveis VITE_* são injetadas em BUILD TIME, não em runtime.
+// Configure VITE_API_URL no painel da Vercel ANTES do deploy/build.
+// Se a env var não existir, cai no fallback localhost (modo dev local).
+//
+// Exportada para que páginas públicas (Login, Register, Verify) possam
+// chamar endpoints sem precisar passar pelo interceptor do apiFetch.
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
+
+// Controle de concorrência para o refresh:
+// Se 5 requisições derem 401 ao mesmo tempo, queremos UM refresh só,
+// não 5 refreshes em paralelo (que invalidariam o token uns dos outros).
+let refreshPromise = null
 
 // Função auxiliar para montar os cabeçalhos
 const getHeaders = (isFormData = false) => {
   const token = localStorage.getItem('access_token')
   const headers = {}
-  
-  // Se não for envio de arquivo (FormData), coloca o tipo como JSON
+
   if (!isFormData) {
     headers['Content-Type'] = 'application/json'
   }
-  
-  // Se tiver o crachá (token), adiciona na requisição
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  
+
   return headers
 }
 
-// 🚀 O NOSSO NOVO FETCH SUPERPODEROSO
+// 🔄 Renovação de token com proteção contra chamadas concorrentes
+async function refreshAccessToken() {
+  if (refreshPromise) return refreshPromise
+
+  refreshPromise = (async () => {
+    try {
+      const refreshToken = localStorage.getItem('refresh_token')
+      if (!refreshToken) throw new Error('Sem refresh token salvo')
+
+      const res = await fetch(`${API_BASE_URL}/token/refresh/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh: refreshToken }),
+      })
+
+      if (!res.ok) throw new Error('Refresh token inválido ou expirado')
+
+      const data = await res.json()
+      localStorage.setItem('access_token', data.access)
+      return data.access
+    } finally {
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
+// 🧹 Limpa tudo e redireciona pro login (sem causar loop infinito)
+function forceLogout() {
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('user')
+
+  if (!window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login'
+  }
+}
+
+// 🚀 O NOSSO FETCH SUPERPODEROSO (use só para endpoints AUTENTICADOS)
 export async function apiFetch(endpoint, options = {}) {
   const isFormData = options.body instanceof FormData
-  
-  const config = {
+
+  const buildConfig = () => ({
     ...options,
     headers: {
       ...getHeaders(isFormData),
-      ...options.headers, // Mantém qualquer header extra que passar
+      ...options.headers,
     },
-  }
+  })
 
-  // 1. Tenta fazer a requisição original
-  let response = await fetch(`${API_BASE_URL}${endpoint}`, config)
+  let response = await fetch(`${API_BASE_URL}${endpoint}`, buildConfig())
 
-  // 2. INTERCEPTOR: Se der 401 (Não Autorizado / Token Expirado)
   if (response.status === 401) {
-    const refreshToken = localStorage.getItem('refresh_token')
-    
-    if (refreshToken) {
-      try {
-        // Tenta ir no backend pegar um token novo usando o refresh_token
-        const refreshRes = await fetch(`${API_BASE_URL}/token/refresh/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh: refreshToken })
-        })
-
-        if (refreshRes.ok) {
-          const data = await refreshRes.json()
-          // Salva o token novinho em folha
-          localStorage.setItem('access_token', data.access) 
-
-          // 3. Atualiza os cabeçalhos e refaz a requisição original silenciosamente!
-          config.headers = {
-            ...getHeaders(isFormData),
-            ...options.headers,
-          }
-          response = await fetch(`${API_BASE_URL}${endpoint}`, config)
-          
-        } else {
-          // O refresh token também expirou (geralmente dura dias ou semanas)
-          throw new Error('Sessão expirada')
-        }
-      } catch (err) {
-        // Se der qualquer pau na renovação, limpa a casa e expulsa pro login
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
-        window.location.href = '/login'
-        return Promise.reject(err)
-      }
-    } else {
-      // Tomou 401 e nem refresh token tem. Expulsa.
-      localStorage.removeItem('access_token')
-      window.location.href = '/login'
+    try {
+      await refreshAccessToken()
+      response = await fetch(`${API_BASE_URL}${endpoint}`, buildConfig())
+    } catch (err) {
+      forceLogout()
+      return Promise.reject(err)
     }
   }
 

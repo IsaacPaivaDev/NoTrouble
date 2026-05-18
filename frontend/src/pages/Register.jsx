@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
+import { API_BASE_URL } from '../api/client'
 
 export default function Register() {
   const navigate = useNavigate()
   const { isDarkMode, toggleTheme } = useTheme()
-  
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     companyName: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
   })
-  
+
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [isLoading, setIsLoading] = useState(false)
@@ -41,7 +42,8 @@ export default function Register() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/register/', {
+      // ⚠️ Endpoint público — fetch puro com API_BASE_URL.
+      const response = await fetch(`${API_BASE_URL}/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -49,20 +51,20 @@ export default function Register() {
           last_name: formData.lastName,
           company_name: formData.companyName,
           email: formData.email,
-          password: formData.password
-        })
+          password: formData.password,
+        }),
       })
 
       const data = await response.json()
 
       if (response.ok && data.success) {
         setSuccess('Conta pré-criada! Enviando código...')
-        
-        // 🚀 AQUI ELE CHAMA A TELA DE VERIFICAÇÃO LEVANDO O E-MAIL JUNTO
+
+        // 🚀 Vai pra tela de verificação levando o e-mail junto
         setTimeout(() => {
           navigate('/verify', { state: { email: formData.email } })
         }, 1500)
-        
+
       } else {
         setError(data.message || 'Erro ao criar conta. Tente novamente.')
       }
@@ -75,13 +77,13 @@ export default function Register() {
 
   return (
     <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-500 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
-      
+
       <button onClick={toggleTheme} className="absolute top-6 right-6 text-2xl hover:scale-110 transition-transform" title="Trocar Tema">
         {isDarkMode ? '☀️' : '🌙'}
       </button>
 
       <div className={`max-w-xl w-full rounded-2xl shadow-2xl p-8 transform transition-all ${isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white'}`}>
-        
+
         <div className="text-center mb-8">
           <h1 className="text-4xl font-extrabold bg-gradient-to-r from-blue-500 to-blue-700 bg-clip-text text-transparent mb-2">
             Notrouble
@@ -98,32 +100,32 @@ export default function Register() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Nome</label>
-              <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Seu nome" required />
+              <input type="text" name="firstName" value={formData.firstName} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Seu nome" required autoComplete="given-name" />
             </div>
             <div>
               <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Sobrenome</label>
-              <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Seu sobrenome" required />
+              <input type="text" name="lastName" value={formData.lastName} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Seu sobrenome" required autoComplete="family-name" />
             </div>
           </div>
 
           <div>
             <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Nome da Empresa / Equipe</label>
-            <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Ex: Minha Startup" required />
+            <input type="text" name="companyName" value={formData.companyName} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="Ex: Minha Startup" required autoComplete="organization" />
           </div>
 
           <div>
             <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Email (Seu Login)</label>
-            <input type="email" name="email" value={formData.email} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="voce@empresa.com" required />
+            <input type="email" name="email" value={formData.email} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="voce@empresa.com" required autoComplete="email" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Senha</label>
-              <input type="password" name="password" value={formData.password} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="••••••••" required minLength="6" />
+              <input type="password" name="password" value={formData.password} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="••••••••" required minLength="6" autoComplete="new-password" />
             </div>
             <div>
               <label className={`block text-xs font-bold uppercase tracking-wider mb-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Confirmar Senha</label>
-              <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="••••••••" required minLength="6" />
+              <input type="password" name="confirmPassword" value={formData.confirmPassword} onChange={handleChange} className={`w-full p-4 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-semibold ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`} placeholder="••••••••" required minLength="6" autoComplete="new-password" />
             </div>
           </div>
 

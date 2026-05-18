@@ -4,21 +4,40 @@ Django settings for core project.
 
 import os
 from pathlib import Path
-import dj_database_url # 🚀 NOVO: Lê a URL do Supabase na nuvem
+from datetime import timedelta
+import dj_database_url  # 🚀 Lê a URL do Supabase na nuvem
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# 🚀 O Django agora tenta pegar a chave secreta das variáveis de ambiente do Render. 
-# Se não achar (no seu PC), ele usa essa padrão.
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-$e0=!uahimk0671+3@-&l-vymjlz%el6zh8pjr88%k)+e@$4+^')
 
-# 🚀 Na nuvem, isso vai virar False automaticamente para proteger seus erros
-DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+# =====================================================================
+# 🔐 SECURITY
+# =====================================================================
 
-# 🚀 Permite o Render e o seu localhost acessarem o backend
-ALLOWED_HOSTS = ['*'] 
+# Em PRODUÇÃO (Render), defina SECRET_KEY como env var.
+# O fallback existe só pra você rodar local sem dor de cabeça.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-$e0=!uahimk0671+3@-&l-vymjlz%el6zh8pjr88%k)+e@$4+^'
+)
 
-# Application definition
+# ⚠️ FAIL-SAFE: se DEBUG não vier configurado, assume PRODUÇÃO (False).
+# Mais seguro do que assumir dev. Para rodar local, defina DEBUG=True no .env.
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+
+# ALLOWED_HOSTS via env var separados por vírgula.
+# Exemplo no Render: ALLOWED_HOSTS=notrouble-api.onrender.com,localhost,127.0.0.1
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+    if host.strip()
+]
+
+
+# =====================================================================
+# 📦 APPS
+# =====================================================================
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -26,20 +45,20 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     # Nossos Apps
     'api',
-    
+
     # Terceiros
     'corsheaders',
-    'rest_framework',             
-    'rest_framework_simplejwt',   
+    'rest_framework',
+    'rest_framework_simplejwt',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', # 🚀 NOVO: Ajuda o Render a carregar imagens e CSS
-    'corsheaders.middleware.CorsMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',     # 🚀 Estáticos no Render
+    'corsheaders.middleware.CorsMiddleware',          # ⚠️ Tem que vir ANTES de CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -67,48 +86,121 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# 🚀 DATABASE INTELIGENTE
-# Ele tenta pegar a URL do Supabase do Render. Se não existir, ele usa o seu banco local do PostgreSQL!
+
+# =====================================================================
+# 🗄️ DATABASE (Supabase em prod, Postgres local em dev)
+# =====================================================================
+
 DATABASES = {
     'default': dj_database_url.config(
         default='postgres://postgres:0279@localhost:5432/notrouble_db',
-        conn_max_age=600
+        conn_max_age=600,
+        ssl_require=not DEBUG,  # Supabase exige SSL; local geralmente não usa
     )
 }
 
-AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',},
+
+# =====================================================================
+# 🌐 CORS & CSRF
+# =====================================================================
+
+# 🚨 NUNCA use CORS_ALLOW_ALL_ORIGINS=True em produção.
+# Lista explícita via env, separada por vírgula.
+# Exemplo no Render: CORS_ALLOWED_ORIGINS=https://notrouble.vercel.app,https://notrouble-staging.vercel.app
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:5173,http://127.0.0.1:5173'
+    ).split(',')
+    if origin.strip()
 ]
+
+# Django 4+ exige CSRF_TRUSTED_ORIGINS quando o frontend está em outro domínio HTTPS.
+# Sem isso, qualquer POST/PUT do admin ou form quebra em prod.
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        'CSRF_TRUSTED_ORIGINS',
+        'http://localhost:5173,http://127.0.0.1:5173'
+    ).split(',')
+    if origin.strip()
+]
+
+# Se algum dia migrar tokens pra httpOnly cookies, essa flag precisa ser True
+CORS_ALLOW_CREDENTIALS = True
+
+
+# =====================================================================
+# 🔒 HEADERS DE SEGURANÇA (somente em produção)
+# =====================================================================
+
+if not DEBUG:
+    # Render usa proxy HTTPS; sem isso o Django acha que tá em HTTP e quebra redirects
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 ano
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
+
+# =====================================================================
+# 📁 STATIC / MEDIA
+# =====================================================================
+
+STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Comprime e versiona estáticos (WhiteNoise) — economiza banda no Render
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
+# =====================================================================
+# 👤 AUTH / DRF / JWT
+# =====================================================================
+
+AUTH_USER_MODEL = 'api.User'
+
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+}
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+
+# =====================================================================
+# 🌍 I18N
+# =====================================================================
 
 LANGUAGE_CODE = 'en-us'
 TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-# 🚀 STATIC FILES (Obrigatório para o Render)
-STATIC_URL = 'static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-AUTH_USER_MODEL = 'api.User'
-
-# 🚀 CORS (Liberado para facilitar o Deploy. Depois a gente trava só pra sua URL da Vercel)
-CORS_ALLOW_ALL_ORIGINS = True 
-
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
-}
-
-from datetime import timedelta
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1), 
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
