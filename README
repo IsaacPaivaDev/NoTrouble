@@ -9,20 +9,41 @@
 ### Sobre o Projeto
 O **NoTrouble** é uma plataforma SaaS completa de gestão de fluxo de trabalho estilo "Sandbox", projetada para escala enterprise. O sistema permite que empresas gerenciem projetos através de um Kanban altamente interativo, com forte foco em indicadores financeiros (OKRs) e personalização white-label.
 
-### Funcionalidades Principais
-- **Kanban Interativo (Trello Style):** Sistema de Drag & Drop com projeção ao vivo de movimento para colunas e cartões [cite: Board.jsx].
-- **Gestão de OKRs e Analytics:** Dashboards automáticos que calculam saúde do quadro, produtividade e métricas financeiras (Previsto vs. Investido) em tempo real [cite: analytics.py, Dashboard.jsx].
-- **Arquitetura Multi-Tenant & RBAC:** Controle de acesso baseado em cargos (Administrador, Gerencial, Operacional). Membros operacionais possuem visão restrita aos seus próprios indicadores [cite: endpoints.py, models.py].
-- **Gestão de Equipe e Licenças:** Sistema de convites via e-mail com controle de licenças ativas por empresa [cite: Team.jsx, endpoints.py].
-- **Customização White-label:** Personalização completa de temas hexadecimais, papéis de parede e nomes de workspace para que o cliente se sinta dono da plataforma [cite: Settings.jsx, Dashboard.jsx, endpoints.py].
-- **Perfil de Usuário:** Upload de foto de perfil e gestão de dados cadastrais [cite: Settings.jsx, endpoints.py].
+# NoTrouble - Plataforma de Gestão Ágil e Dashboards
 
-### 🛠️ Tecnologias
-- **Backend:** Python, Django, Django Ninja (API de alta performance).
-- **Frontend:** React.js, Tailwind CSS, Vite.
-- **Banco de Dados:** PostgreSQL.
+O **NoTrouble** é um sistema completo de gestão de projetos baseado em Kanban, projetado para oferecer controle total sobre tarefas, equipes e indicadores de produtividade através de um Dashboard analítico intuitivo.
 
----
+## Principais Funcionalidades
+
+* **Autenticação Segura:** Registro de usuários com verificação de código por e-mail (OTP) e login via JWT.
+* **Gestão de Equipes (Multitenant):** Sistema de convites por e-mail, separação de dados por Empresa e controle de licenças/cargos (Admin/Member).
+* **Kanban Dinâmico:** Crie quadros, gerencie etapas personalizadas e mova cards com sistema de arrastar e soltar (Drag & Drop).
+* **Detalhes Avançados de Cards:** Adição de checklists, tags coloridas, anexos de arquivos, valores financeiros (estimado/investido), datas de entrega e responsáveis.
+* **Dashboard Analítico:** Visão geral da saúde dos projetos, cards concluídos/atrasados e métricas financeiras.
+* **Customização:** Alteração de avatar de usuário, tema de cores da empresa e papel de parede do quadro.
+
+## 🛠️ Tecnologias Utilizadas
+
+**Frontend:**
+* React.js / Vite
+* Tailwind CSS (Estilização)
+* Deploy: **Vercel**
+
+**Backend:**
+* Python 3 / Django
+* Django Ninja (FastAPI style)
+* SimpleJWT (Autenticação)
+* Deploy: **Render**
+
+**Banco de Dados & Infraestrutura:**
+* **Supabase** (PostgreSQL)
+* **Brevo SMTP** (Envio de e-mails transacionais)
+
+## Como rodar localmente
+
+1. Clone o repositório:
+   ```bash
+   git clone [https://github.com/SeuUsuario/NoTrouble.git](https://github.com/SeuUsuario/NoTrouble.git)
 
 ## English
 
