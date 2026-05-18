@@ -201,12 +201,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # =====================================================================
-# 📧 EMAIL (Configuração Outlook)
+# 📧 EMAIL (Configuração Mailtrap)
 # =====================================================================
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp-mail.outlook.com'
-EMAIL_PORT = 587
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'live.smtp.mailtrap.io')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 2525)) # 🚀 Porta 2525 para não travar no Render
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = f"NoTrouble <{EMAIL_HOST_USER}>"
+DEFAULT_FROM_EMAIL = "NoTrouble <hello@mailtrap.io>"
