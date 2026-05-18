@@ -3,7 +3,6 @@ from datetime import date, datetime
 from typing import List, Optional
 import uuid
 from decimal import Decimal
-from .analytics import AnalyticsEngine
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.hashers import make_password
 from ninja import NinjaAPI, Schema, File
@@ -11,6 +10,11 @@ from ninja.files import UploadedFile
 from ninja.security import HttpBearer
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+# 🚀 IMPORTAÇÕES NOVAS DO CARTEIRO (E-MAIL) 🚀
+from django.core.mail import send_mail
+from django.conf import settings
+
+from .analytics import AnalyticsEngine
 from .models import Board, Stage, Card, CardLog, ChecklistItem, Tag, User, Comment, Attachment, Company, VerificationCode, ActivityLog, TeamInvite
 
 class JWTAuth(HttpBearer):
@@ -233,6 +237,22 @@ def register_user(request, payload: RegisterSchema):
 
     code = str(random.randint(100000, 999999))
     VerificationCode.objects.create(user=user, code=code)
+
+    # =========================================================
+    # 🚀 ENVIANDO O E-MAIL DE VERDADE AQUI 🚀
+    # =========================================================
+    try:
+        send_mail(
+            subject='Seu Código de Acesso - NoTrouble',
+            message=f'Olá, {payload.first_name}!\n\nSeu código de verificação é: {code}\n\nBem-vindo(a) ao NoTrouble!',
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[payload.email],
+            fail_silently=False,
+        )
+    except Exception as e:
+        print(f"🚨 ERRO FATAL AO ENVIAR E-MAIL: {e}")
+        user.delete() # Se falhar, apaga o fantasma pra você poder tentar de novo!
+        return api.create_response(request, {"success": False, "message": "Erro ao enviar o e-mail. Tente novamente."}, status=500)
 
     return {"success": True, "message": "Conta criada! Verifique seu e-mail."}
 
