@@ -25,7 +25,7 @@ export default function Settings() {
   const fileInputRef = useRef(null)
 
   const { currentUser, boards } = useBoards(console.error, console.log)
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://notrouble-vdgi.onrender.com'
 
   const [activeTab, setActiveTab] = useState('profile')
   const [isBoardsDropdownOpen, setIsBoardsDropdownOpen] = useState(false) 

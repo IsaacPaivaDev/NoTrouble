@@ -149,7 +149,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-6">
                 {currentUser ? (
                   <div className="h-24 w-24 rounded-full shadow-2xl border-4 border-slate-500/30 overflow-hidden flex items-center justify-center font-bold text-3xl text-white" style={{ backgroundColor: !currentUser.avatar_url ? getColorFromString(currentUser.username) : 'transparent' }}>
-                    {currentUser.avatar_url ? <img src={`http://127.0.0.1:8000${currentUser.avatar_url}`} alt="Avatar" className="h-full w-full object-cover" /> : getInitials(currentUser.first_name, currentUser.last_name, currentUser.username)}
+                    {currentUser.avatar_url ? <img src={`https://notrouble-vdgi.onrender.com${currentUser.avatar_url}`} alt="Avatar" className="h-full w-full object-cover" /> : getInitials(currentUser.first_name, currentUser.last_name, currentUser.username)}
                   </div>
                 ) : (
                   <div className="h-24 w-24 rounded-full bg-slate-300 animate-pulse"></div>
@@ -221,7 +221,7 @@ export default function Dashboard() {
                   {users.map(user => (
                     <div key={user.id} className={`flex items-center gap-3 p-2 rounded-xl transition-colors ${isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50'}`}>
                       <div className="h-10 w-10 rounded-full shadow-sm border border-slate-500/20 overflow-hidden flex items-center justify-center font-bold text-xs text-white" style={{ backgroundColor: !user.avatar_url ? getColorFromString(user.username) : 'transparent' }}>
-                        {user.avatar_url ? <img src={`http://127.0.0.1:8000${user.avatar_url}`} alt="Avatar" className="h-full w-full object-cover" /> : getInitials(user.first_name, user.last_name, user.username)}
+                        {user.avatar_url ? <img src={`https://notrouble-vdgi.onrender.com${user.avatar_url}`} alt="Avatar" className="h-full w-full object-cover" /> : getInitials(user.first_name, user.last_name, user.username)}
                       </div>
                       <div>
                         <p className={`font-bold text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{user.first_name} {user.last_name}</p>

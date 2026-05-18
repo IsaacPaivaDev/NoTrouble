@@ -180,7 +180,7 @@ export default function Board() {
                 title={currentUser.first_name ? `${currentUser.first_name} ${currentUser.last_name}` : currentUser.username}
               >
                 {currentUser.avatar_url ? (
-                  <img src={`http://127.0.0.1:8000${currentUser.avatar_url}`} alt="Avatar" className="h-full w-full object-cover" />
+                  <img src={`https://notrouble-vdgi.onrender.com${currentUser.avatar_url}`} alt="Avatar" className="h-full w-full object-cover" />
                 ) : (
                   (currentUser.first_name ? getInitials(currentUser.first_name, currentUser.last_name, currentUser.username) : '') || currentUser.username?.substring(0, 2).toUpperCase() || 'U'
                 )}

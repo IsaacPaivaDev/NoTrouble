@@ -21,7 +21,7 @@ export default function Data() {
   const [dashboardError, setDashboardError] = useState(null)
 
   const { currentUser } = useBoards(console.error, console.log)
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://notrouble-vdgi.onrender.com'
 
   useEffect(() => {
     if (activeReport === 'activity_log') {

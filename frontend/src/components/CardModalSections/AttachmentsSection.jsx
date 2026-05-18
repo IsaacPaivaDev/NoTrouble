@@ -9,7 +9,7 @@ export default function AttachmentsSection({ isDarkMode, attachments, isUploadin
             <div key={att.id} className={`flex items-center justify-between p-4 border rounded-lg shadow-sm hover:shadow-md transition-all ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
               <div className="flex items-center gap-3">
                 <span className="text-2xl">📄</span>
-                <a href={`http://127.0.0.1:8000${att.url}`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-500 hover:text-blue-400 cursor-pointer transition-colors underline">{att.filename}</a>
+                <a href={`https://notrouble-vdgi.onrender.com${att.url}`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-blue-500 hover:text-blue-400 cursor-pointer transition-colors underline">{att.filename}</a>
               </div>
             </div>
         ))}

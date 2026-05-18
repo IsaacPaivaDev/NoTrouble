@@ -35,7 +35,7 @@ export default function Verify() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/verify/', {
+      const response = await fetch('https://notrouble-vdgi.onrender.com/api/verify/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, code })

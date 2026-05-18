@@ -30,7 +30,7 @@ export default function CommentsSection({ isDarkMode, comments, newComment, setN
           style={{ backgroundColor: currentUser && !currentUser.avatar_url ? getColorFromString(currentUser.username) : '#3B82F6' }}
         >
           {currentUser?.avatar_url ? (
-            <img src={`http://127.0.0.1:8000${currentUser.avatar_url}`} alt="Me" className="h-full w-full object-cover" />
+            <img src={`https://notrouble-vdgi.onrender.com${currentUser.avatar_url}`} alt="Me" className="h-full w-full object-cover" />
           ) : (
             currentUser ? getInitials(currentUser.first_name, currentUser.last_name, currentUser.username) : 'U'
           )}

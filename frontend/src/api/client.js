@@ -5,7 +5,7 @@
 //
 // Exportada para que páginas públicas (Login, Register, Verify) possam
 // chamar endpoints sem precisar passar pelo interceptor do apiFetch.
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api'
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://notrouble-vdgi.onrender.com'
 
 // Controle de concorrência para o refresh:
 // Se 5 requisições derem 401 ao mesmo tempo, queremos UM refresh só,
