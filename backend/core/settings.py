@@ -106,7 +106,6 @@ DATABASES = {
 
 # 🚨 NUNCA use CORS_ALLOW_ALL_ORIGINS=True em produção.
 # Lista explícita via env, separada por vírgula.
-# Exemplo no Render: CORS_ALLOWED_ORIGINS=https://notrouble.vercel.app,https://notrouble-staging.vercel.app
 CORS_ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
@@ -116,8 +115,6 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 
-# Django 4+ exige CSRF_TRUSTED_ORIGINS quando o frontend está em outro domínio HTTPS.
-# Sem isso, qualquer POST/PUT do admin ou form quebra em prod.
 CSRF_TRUSTED_ORIGINS = [
     origin.strip()
     for origin in os.environ.get(
@@ -127,7 +124,6 @@ CSRF_TRUSTED_ORIGINS = [
     if origin.strip()
 ]
 
-# Se algum dia migrar tokens pra httpOnly cookies, essa flag precisa ser True
 CORS_ALLOW_CREDENTIALS = True
 
 
@@ -136,7 +132,6 @@ CORS_ALLOW_CREDENTIALS = True
 # =====================================================================
 
 if not DEBUG:
-    # Render usa proxy HTTPS; sem isso o Django acha que tá em HTTP e quebra redirects
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
@@ -154,7 +149,6 @@ if not DEBUG:
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Comprime e versiona estáticos (WhiteNoise) — economiza banda no Render
 STORAGES = {
     "default": {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
@@ -204,3 +198,15 @@ USE_I18N = True
 USE_TZ = True
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# =====================================================================
+# 📧 EMAIL (Configuração Outlook)
+# =====================================================================
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.office365.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
+DEFAULT_FROM_EMAIL = f"NoTrouble <{EMAIL_HOST_USER}>"
