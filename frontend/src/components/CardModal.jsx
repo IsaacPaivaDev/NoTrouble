@@ -9,7 +9,7 @@ export default function CardModal(props) {
   const { isDarkMode } = useTheme()
   const modalData = useCardModal(props)
 
-  // 🚀 PROTEÇÃO DO BOTÃO 'ESC'
+  // 🚀 PROTEÇÃO DO BOTÃO 'ESC' (Agora pergunta ou salva)
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === 'Escape') modalData.handleSafeClose();
@@ -26,12 +26,15 @@ export default function CardModal(props) {
   const availableStagesForThisCard = currentBoard ? currentBoard.stages : [];
 
   return (
-    // 🚀 onClick do fundo escuro agora usa o fechamento seguro
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto pt-20 pb-20 modal-backdrop" onClick={modalData.handleSafeClose}>
-      <div className={`rounded-2xl w-[900px] max-w-[95%] shadow-2xl relative p-8 flex gap-8 modal-content transition-colors duration-300 ${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}`} onClick={(e) => e.stopPropagation()}>
+    // 🚀 onPaste aqui captura CTRL+V em qualquer lugar do modal
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-start justify-center z-50 overflow-y-auto pt-10 pb-10 modal-backdrop" 
+      onClick={modalData.handleSafeClose}
+      onPaste={modalData.handlePaste} 
+    >
+      <div className={`rounded-2xl w-[1000px] max-w-[95%] shadow-2xl relative p-8 flex flex-col md:flex-row gap-8 modal-content transition-colors duration-300 min-h-[500px] ${isDarkMode ? 'bg-slate-800 text-slate-200' : 'bg-white text-slate-800'}`} onClick={(e) => e.stopPropagation()}>
         
-        {/* 🚀 onClick do 'X' agora usa o fechamento seguro */}
-        <button onClick={modalData.handleSafeClose} className={`absolute top-6 right-6 h-10 w-10 rounded-full flex items-center justify-center font-bold text-2xl transition-all duration-200 hover:scale-110 ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}>✕</button>
+        <button onClick={modalData.handleSafeClose} className={`absolute top-6 right-6 h-10 w-10 rounded-full flex items-center justify-center font-bold text-2xl transition-all duration-200 hover:scale-110 z-10 ${isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`} title="Fechar (ESC)">✕</button>
         
         {modalData.isLoading || !modalData.selectedCard ? (
           <div className="flex-1 flex justify-center items-center py-20 font-bold opacity-50">Carregando dados...</div>

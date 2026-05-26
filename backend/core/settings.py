@@ -6,8 +6,12 @@ import os
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url  # 🚀 Lê a URL do Supabase na nuvem
+from dotenv import load_dotenv  # 🚀 Importação adicionada para ler o .env local
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# 🚀 Carrega as variáveis do arquivo .env (se ele existir na raiz do backend)
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 # =====================================================================
@@ -201,7 +205,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 # =====================================================================
-# 📧 EMAIL (Configuração Mailtrap)
+# 📧 EMAIL (Configuração Brevo)
 # =====================================================================
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'live.smtp.mailtrap.io')
@@ -209,4 +213,4 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 2525)) # 🚀 Porta 2525 para não
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
-DEFAULT_FROM_EMAIL = "NoTrouble <notrouble-code@outlook.com>" 
+DEFAULT_FROM_EMAIL = "NoTrouble <notrouble-code@outlook.com>"

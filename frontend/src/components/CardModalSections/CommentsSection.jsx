@@ -1,46 +1,62 @@
 import { formatTime, getInitials, getColorFromString } from '../../utils/formatters'
+import { mediaUrl } from '../../utils/media'
+import { IconTrash } from '../../utils/icons'
 
-export default function CommentsSection({ isDarkMode, comments, newComment, setNewComment, isSaving, handleAddComment, currentUser }) {
+export default function CommentsSection({ isDarkMode, comments, newComment, setNewComment, isSaving, handleAddComment, handleDeleteComment, currentUser }) {
   return (
-    <div className={`pt-4 border-t pb-4 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-      <label className={`block text-sm font-bold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-        <span>💬</span> Atividades e Comentários
-      </label>
-      <div className="flex flex-col gap-4 mb-6">
-        {comments.map(comment => (
-          <div key={comment.id} className="flex gap-3 animate-fade-in">
-            <div className={`h-8 w-8 rounded-full flex items-center justify-center font-bold shrink-0 shadow-sm text-xs ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-300 text-slate-600'}`}>
-              {comment.user_name[0].toUpperCase()}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-baseline gap-2 mb-1">
-                <span className={`font-bold text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{comment.user_name}</span>
-                <span className="text-xs text-slate-500">{formatTime(comment.created_at)}</span>
+    <div className="flex flex-col gap-4">
+      {comments.length > 0 && (
+        <div className="flex flex-col gap-3 mb-2">
+          {comments.map(comment => (
+            <div key={comment.id} className="flex gap-3 group">
+              <div className={`h-7 w-7 rounded-full flex items-center justify-center font-bold shrink-0 text-[10px] ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
+                {(comment.user_name && comment.user_name[0]?.toUpperCase()) || 'U'}
               </div>
-              <p className={`text-sm p-3 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>{comment.text}</p>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`font-bold text-xs ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{comment.user_name || 'Usuario'}</span>
+                  <span className="text-[10px] text-slate-500">{formatTime(comment.created_at)}</span>
+                  {/* Botao excluir: visivel no hover para autor ou admin/manager */}
+                  {handleDeleteComment && (
+                    <button
+                      onClick={() => handleDeleteComment(comment.id)}
+                      className="hidden group-hover:block text-slate-400 hover:text-red-500 ml-auto transition-colors"
+                      title="Excluir comentario"
+                    >
+                      <IconTrash className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <p className={`text-sm p-2.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>{comment.text}</p>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
+
+      {/* Input de novo comentario */}
       <div className="flex gap-3">
-        
-        {/* 🚀 AVATAR INTELIGENTE: FOTO OU INICIAIS */}
-        <div 
-          className="h-8 w-8 rounded-full text-white flex items-center justify-center font-bold shrink-0 shadow-md text-xs overflow-hidden" 
+        <div
+          className="h-7 w-7 rounded-full text-white flex items-center justify-center font-bold shrink-0 text-[10px] overflow-hidden"
           style={{ backgroundColor: currentUser && !currentUser.avatar_url ? getColorFromString(currentUser.username) : '#3B82F6' }}
         >
-          {currentUser?.avatar_url ? (
-            <img src={`https://notrouble-vdgi.onrender.com${currentUser.avatar_url}`} alt="Me" className="h-full w-full object-cover" />
-          ) : (
-            currentUser ? getInitials(currentUser.first_name, currentUser.last_name, currentUser.username) : 'U'
-          )}
+          {currentUser?.avatar_url
+            ? <img src={mediaUrl(currentUser.avatar_url)} alt="" className="h-full w-full object-cover" />
+            : currentUser ? getInitials(currentUser.first_name, currentUser.last_name, currentUser.username) : 'U'
+          }
         </div>
-
-        <div className="flex-1 flex flex-col gap-3">
-          <textarea rows="2" value={newComment} onChange={(e) => setNewComment(e.target.value)} className={`input-focus w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm shadow-sm font-medium resize-none disabled:opacity-50 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-700'}`} placeholder="Escreva um comentário..." disabled={isSaving} />
-          <div className="flex justify-between items-center">
-            <button className="text-sm font-bold text-slate-500 hover:text-blue-500 transition-colors flex items-center gap-1">@ Mencionar Usuário</button>
-            <button onClick={handleAddComment} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all duration-200 disabled:opacity-50 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-gradient-to-r from-slate-200 to-slate-100 text-slate-700 hover:from-slate-300 hover:to-slate-200'}`} disabled={isSaving}>Comentar</button>
+        <div className="flex-1 flex flex-col gap-2">
+          <textarea
+            rows="2"
+            value={newComment}
+            onChange={e => setNewComment(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment() } }}
+            className={`w-full p-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm font-medium resize-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-700'}`}
+            placeholder="Escreva um comentario... (Enter para enviar)"
+            disabled={isSaving}
+          />
+          <div className="flex justify-end">
+            <button onClick={handleAddComment} disabled={isSaving || !newComment.trim()} className={`px-3 py-1.5 rounded-lg font-semibold text-xs transition-colors disabled:opacity-30 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>Comentar</button>
           </div>
         </div>
       </div>

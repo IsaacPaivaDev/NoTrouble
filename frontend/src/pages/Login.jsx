@@ -21,10 +21,14 @@ export default function Login() {
     setIsLoading(true)
 
     try {
-      // ⚠️ NÃO usamos apiFetch aqui: ele tem interceptor de 401 que tentaria
-      // refresh do token (que não existe ainda). Login é endpoint público,
-      // então fetch puro com o API_BASE_URL é o caminho correto.
-      const response = await fetch(`${API_BASE_URL}/token/`, {
+      // 🛡️ Trava de Segurança: Garante que a rota /api exista na URL,
+      // independente de como a variável de ambiente foi preenchida.
+      const baseUrl = API_BASE_URL.endsWith('/api') 
+        ? API_BASE_URL 
+        : `${API_BASE_URL.replace(/\/$/, '')}/api`
+
+      // Agora a chamada vai corretamente para /api/token/
+      const response = await fetch(`${baseUrl}/token/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
