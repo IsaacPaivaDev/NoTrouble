@@ -7,7 +7,7 @@ import CardModal from '../components/CardModal'
 import { mediaUrl } from '../utils/media'
 import { isOverdue } from '../utils/dates'
 import { formatCurrency, formatDate, getInitials, getColorFromString } from '../utils/formatters'
-import { IconTrash, IconPencil, IconPlus, IconCalendar, IconCheck, IconKanban, IconList, IconPrioHigh, IconPrioLow } from '../utils/icons'
+import { IconTrash, IconPencil, IconPlus, IconCalendar, IconCheck, IconKanban, IconList, IconPrioHigh, IconPrioLow, IconDollar } from '../utils/icons'
 
 const BG_MAP = {
   default:  { dark: 'bg-slate-900', light: 'bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100' },
@@ -17,6 +17,14 @@ const BG_MAP = {
 }
 
 const IconSort = ({className="w-3.5 h-3.5"}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/></svg>
+
+const SORT_OPTIONS = [
+  { key: 'date_asc', label: 'Prazo mais proximo' },
+  { key: 'date_desc', label: 'Prazo mais distante' },
+  { key: 'payment_asc', label: 'Pagamento mais proximo' },
+  { key: 'created_desc', label: 'Mais recente primeiro' },
+  { key: 'tag', label: 'Por tag (A-Z)' },
+]
 
 export default function Board() {
   const navigate = useNavigate()
@@ -29,7 +37,6 @@ export default function Board() {
   const [activeBoardId, setActiveBoardId] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
 
-  // Ordenacao por coluna
   const [stageSort, setStageSort] = useState({})
   const getSortMode = (stageId) => stageSort[stageId] || 'date_asc'
   const setSortMode = (stageId, mode) => setStageSort(prev => ({ ...prev, [stageId]: mode }))
@@ -80,7 +87,6 @@ export default function Board() {
     setIsCreateBoardModalOpen(false); setNewBoardName(""); setNewBoardStages(["A Fazer", "Em Andamento", "Concluido"])
   }
 
-  // Filtra + ordena cards por coluna
   const filteredStages = useMemo(() => {
     if (!activeBoard) return []
     const lastId = activeBoard.stages.length > 0 ? activeBoard.stages[activeBoard.stages.length - 1].id : null
@@ -95,6 +101,7 @@ export default function Board() {
       cards = [...cards].sort((a, b) => {
         if (mode === 'date_asc') return (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1
         if (mode === 'date_desc') return (b.due_date || '') < (a.due_date || '') ? -1 : 1
+        if (mode === 'payment_asc') return (a.payment_date || '9999') < (b.payment_date || '9999') ? -1 : 1
         if (mode === 'created_desc') return (b.created_at || '') < (a.created_at || '') ? -1 : 1
         if (mode === 'tag') return (a.tags?.[0]?.name || 'zzz').localeCompare(b.tags?.[0]?.name || 'zzz')
         return 0
@@ -113,7 +120,6 @@ export default function Board() {
     return stages
   }, [filteredStages, draggingType, draggedStageId, dragOverStageId])
 
-  // Background
   const wpUrl = currentUser?.company?.wallpaper_url
   const isWp = savedBg === 'wallpaper' && wpUrl
   const bgClass = isWp ? '' : ((BG_MAP[savedBg] || BG_MAP.default)[isDarkMode ? 'dark' : 'light'])
@@ -133,12 +139,80 @@ export default function Board() {
   const doneInBoard = lastStageId ? activeBoard.stages.filter(s => s.id === lastStageId).reduce((a, s) => a + s.cards.length, 0) : 0
   const lateInBoard = activeBoard?.stages.filter(s => s.id !== lastStageId).reduce((a, s) => a + s.cards.filter(c => isOverdue(c.due_date)).length, 0) || 0
 
-  const SORT_OPTIONS = [
-    { key: 'date_asc', label: 'Data mais proxima' },
-    { key: 'date_desc', label: 'Data mais distante' },
-    { key: 'created_desc', label: 'Mais recente primeiro' },
-    { key: 'tag', label: 'Por tag (A-Z)' },
-  ]
+  // ---- MINI CARD COMPONENT ----
+  const MiniCard = ({ card }) => {
+    const result = parseFloat(card.estimated_value || 0) - parseFloat(card.invested_value || 0)
+    const hasFinancial = card.estimated_value || card.invested_value
+    return (
+      <div
+        draggable
+        onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('type', 'card'); e.dataTransfer.setData('card_id', card.id); setIsDragging(true); setDraggingType('card') }}
+        onDragEnd={cleanupDrag}
+        onClick={() => openModal(card.id)}
+        className={`card-hover p-3 rounded-lg border cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md group animate-fade-in transition-colors ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-200'}`}
+      >
+        {/* Titulo + prioridade */}
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <p className={`font-semibold text-sm leading-snug group-hover:text-blue-500 flex-1 ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>{card.title}</p>
+          <div className="shrink-0 flex items-center gap-1">
+            {card.priority === 'high' && <IconPrioHigh />}
+            {card.priority === 'low' && <IconPrioLow />}
+          </div>
+        </div>
+
+        {/* Tags com NOME bem visivel */}
+        {card.tags?.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2.5">
+            {card.tags.slice(0, 4).map(t => (
+              <span
+                key={t.id}
+                className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold text-white leading-none whitespace-nowrap"
+                style={{ backgroundColor: t.color }}
+              >
+                {t.name || 'Sem nome'}
+              </span>
+            ))}
+            {card.tags.length > 4 && (
+              <span className={`text-[10px] font-bold self-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>+{card.tags.length - 4}</span>
+            )}
+          </div>
+        )}
+
+        {/* Metadados: data, checklist, financeiro, pagamento, responsavel */}
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          {card.due_date && (
+            <span className={`flex items-center gap-1 ${isOverdue(card.due_date) ? 'text-red-500' : ''}`}>
+              <IconCalendar /> {formatDate(card.due_date)}
+            </span>
+          )}
+          {card.payment_date && (
+            <span className="flex items-center gap-1 text-green-500">
+              <IconDollar className="w-3 h-3" /> {formatDate(card.payment_date)}
+            </span>
+          )}
+          {card.checklist_count > 0 && (
+            <span className="flex items-center gap-1">
+              <IconCheck /> {card.checklist_done}/{card.checklist_count}
+            </span>
+          )}
+          {hasFinancial && (
+            <span className={`font-bold ${result < 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {formatCurrency(result)}
+            </span>
+          )}
+          {card.assignee && (
+            <div
+              className="ml-auto h-5 w-5 rounded-full flex items-center justify-center text-[8px] text-white font-bold"
+              style={{ backgroundColor: getColorFromString(card.assignee.username) }}
+              title={card.assignee.first_name || card.assignee.username}
+            >
+              {getInitials(card.assignee.first_name, card.assignee.last_name, card.assignee.username) || card.assignee.username.substring(0, 2).toUpperCase()}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <PageLayout boards={boards} currentUser={currentUser} activeBoardId={activeBoardId} onBoardSelect={(id) => { setActiveBoardId(id); setSearchParams({ id }); setActiveFilter('all') }} onCreateBoard={() => setIsCreateBoardModalOpen(true)} headerActions={headerActions} bgClass={bgClass} bgStyle={bgStyle}>
@@ -182,20 +256,21 @@ export default function Board() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead className={`text-xs uppercase tracking-wider ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
-                    <tr><th className="p-4 font-bold">Titulo</th><th className="p-4 font-bold">Etapa</th><th className="p-4 font-bold">Tags</th><th className="p-4 font-bold">Prazo</th><th className="p-4 font-bold">Resultado</th><th className="p-4 font-bold text-right">Acoes</th></tr>
+                    <tr><th className="p-4 font-bold">Titulo</th><th className="p-4 font-bold">Etapa</th><th className="p-4 font-bold">Tags</th><th className="p-4 font-bold">Prazo</th><th className="p-4 font-bold">Pagamento</th><th className="p-4 font-bold">Resultado</th><th className="p-4 font-bold text-right">Acoes</th></tr>
                   </thead>
                   <tbody className={`divide-y ${isDarkMode ? 'divide-slate-700 text-slate-200' : 'divide-slate-100 text-slate-700'}`}>
                     {displayStages.flatMap(s => s.cards.map(c => ({...c, stageName: s.name}))).length === 0 ? (
-                      <tr><td colSpan="6" className="p-8 text-center italic opacity-50">Nenhum card neste filtro.</td></tr>
+                      <tr><td colSpan="7" className="p-8 text-center italic opacity-50">Nenhum card neste filtro.</td></tr>
                     ) : displayStages.flatMap(s => s.cards.map(c => ({...c, stageName: s.name}))).map(card => {
                       const result = parseFloat(card.estimated_value||0) - parseFloat(card.invested_value||0)
                       const hasF = card.estimated_value || card.invested_value
                       return (
                         <tr key={card.id} onClick={() => openModal(card.id)} className={`transition-colors cursor-pointer group ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
-                          <td className="p-4 font-semibold text-sm group-hover:text-blue-500 flex items-center gap-2">{card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}{card.title}</td>
+                          <td className="p-4 font-semibold text-sm group-hover:text-blue-500"><div className="flex items-center gap-2">{card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}{card.title}</div></td>
                           <td className="p-4"><span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${isDarkMode?'bg-slate-900 text-blue-400':'bg-blue-50 text-blue-600'}`}>{card.stageName}</span></td>
-                          <td className="p-4"><div className="flex flex-wrap gap-1">{card.tags?.slice(0,3).map(t=><span key={t.id} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white" style={{backgroundColor:t.color}}>{t.name}</span>)}</div></td>
+                          <td className="p-4"><div className="flex flex-wrap gap-1">{card.tags?.slice(0,3).map(t=><span key={t.id} className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style={{backgroundColor:t.color}}>{t.name||'?'}</span>)}</div></td>
                           <td className={`p-4 text-sm ${isOverdue(card.due_date)?'text-red-500':''}`}>{card.due_date?formatDate(card.due_date):'-'}</td>
+                          <td className="p-4 text-sm text-green-500">{card.payment_date?formatDate(card.payment_date):'-'}</td>
                           <td className="p-4 text-sm font-bold">{hasF?<span className={result<0?'text-red-500':'text-green-500'}>{formatCurrency(result)}</span>:'-'}</td>
                           <td className="p-4 text-right"><button onClick={e=>{e.stopPropagation();deleteCard(card.id)}} className="p-2 text-slate-400 hover:text-red-500 rounded-lg"><IconTrash/></button></td>
                         </tr>
@@ -213,7 +288,7 @@ export default function Board() {
                   onDragOver={e=>{e.preventDefault();if(draggingType==='stage'&&draggedStageId!==stage.id)setDragOverStageId(stage.id)}}
                   onDragEnd={()=>{if(draggingType==='stage'&&draggedStageId&&dragOverStageId&&draggedStageId!==dragOverStageId)reorderStages(activeBoard.id,displayStages.map(s=>s.id));cleanupDrag()}}
                   onDrop={e=>{e.preventDefault();e.stopPropagation();const t=e.dataTransfer.getData('type')||draggingType;if(t==='card'){const cid=e.dataTransfer.getData('card_id');if(cid)moveCard(cid,stage.id)};cleanupDrag()}}
-                  className={`rounded-xl p-3 min-w-[270px] w-[270px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-180px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
+                  className={`rounded-xl p-3 min-w-[280px] w-[280px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-180px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
                 >
                   <div className={`transition-opacity duration-200 flex flex-col h-full ${draggedStageId===stage.id?'opacity-0':'opacity-100'}`}>
                     {/* Header da coluna */}
@@ -231,15 +306,14 @@ export default function Board() {
                       )}
                       <div className="flex items-center gap-1.5">
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDarkMode?'bg-blue-900/50 text-blue-400':'bg-blue-200 text-blue-800'}`}>{stage.cards?.length||0}</span>
-                        {/* Menu de ordenacao */}
                         <div className="relative">
                           <button onClick={(e)=>{e.stopPropagation();setOpenSortMenu(openSortMenu===stage.id?null:stage.id)}} className={`p-0.5 rounded opacity-0 group-hover/header:opacity-100 transition-opacity ${isDarkMode?'hover:bg-slate-600 text-slate-400':'hover:bg-slate-200 text-slate-500'}`} title="Ordenar"><IconSort/></button>
                           {openSortMenu===stage.id&&(
                             <>
                               <div className="fixed inset-0 z-40" onClick={()=>setOpenSortMenu(null)}/>
-                              <div className={`absolute right-0 top-full mt-1 w-44 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode?'bg-slate-800 border-slate-600':'bg-white border-slate-200'}`}>
+                              <div className={`absolute right-0 top-full mt-1 w-48 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode?'bg-slate-800 border-slate-600':'bg-white border-slate-200'}`}>
                                 {SORT_OPTIONS.map(opt=>(
-                                  <button key={opt.key} onClick={(e)=>{e.stopPropagation();setSortMode(stage.id,opt.key);setOpenSortMenu(null)}} className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors ${getSortMode(stage.id)===opt.key?'bg-blue-600 text-white':(isDarkMode?'text-slate-200 hover:bg-slate-700':'text-slate-700 hover:bg-slate-100')}`}>{opt.label}</button>
+                                  <button key={opt.key} onClick={(e)=>{e.stopPropagation();setSortMode(stage.id,opt.key);setOpenSortMenu(null)}} className={`w-full text-left px-3 py-2.5 text-xs font-semibold transition-colors ${getSortMode(stage.id)===opt.key?'bg-blue-600 text-white':(isDarkMode?'text-slate-200 hover:bg-slate-700':'text-slate-700 hover:bg-slate-100')}`}>{opt.label}</button>
                                 ))}
                               </div>
                             </>
@@ -250,33 +324,10 @@ export default function Board() {
 
                     {/* Cards */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2.5 pb-2 pr-1 min-h-[50px]">
-                      {stage.cards?.length>0?stage.cards.map((card)=>{
-                        const result=parseFloat(card.estimated_value||0)-parseFloat(card.invested_value||0)
-                        const hasF=card.estimated_value||card.invested_value
-                        return(
-                          <div key={card.id} draggable onDragStart={e=>{e.stopPropagation();e.dataTransfer.setData('type','card');e.dataTransfer.setData('card_id',card.id);setIsDragging(true);setDraggingType('card')}} onDragEnd={cleanupDrag} onClick={()=>openModal(card.id)} className={`card-hover p-2.5 rounded-md border cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md group animate-fade-in transition-colors ${isDarkMode?'bg-slate-700 border-slate-600':'bg-white border-slate-200'}`}>
-                            <div className="flex items-start justify-between gap-1 mb-1.5">
-                              <p className={`font-medium text-[13px] leading-snug group-hover:text-blue-500 flex-1 ${isDarkMode?'text-slate-100':'text-slate-800'}`}>{card.title}</p>
-                              {card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}
-                            </div>
-
-                            {/* Tags com NOME */}
-                            {card.tags?.length>0&&(
-                              <div className="flex flex-wrap gap-1 mb-2">
-                                {card.tags.slice(0,4).map(t=><span key={t.id} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white truncate max-w-[80px]" style={{backgroundColor:t.color}}>{t.name}</span>)}
-                                {card.tags.length>4&&<span className={`text-[9px] font-bold ${isDarkMode?'text-slate-400':'text-slate-500'}`}>+{card.tags.length-4}</span>}
-                              </div>
-                            )}
-
-                            <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold ${isDarkMode?'text-slate-400':'text-slate-500'}`}>
-                              {card.due_date&&<span className={`flex items-center gap-1 ${isOverdue(card.due_date)?'text-red-500':''}`}><IconCalendar/>{formatDate(card.due_date)}</span>}
-                              {card.checklist_count>0&&<span className="flex items-center gap-1"><IconCheck/>{card.checklist_done}/{card.checklist_count}</span>}
-                              {hasF&&<span className={`font-bold ${result<0?'text-red-500':'text-green-500'}`}>{formatCurrency(result)}</span>}
-                              {card.assignee&&<div className="ml-auto h-5 w-5 rounded-full flex items-center justify-center text-[8px] text-white font-bold" style={{backgroundColor:getColorFromString(card.assignee.username)}} title={card.assignee.first_name||card.assignee.username}>{getInitials(card.assignee.first_name,card.assignee.last_name,card.assignee.username)||card.assignee.username.substring(0,2).toUpperCase()}</div>}
-                            </div>
-                          </div>
-                        )
-                      }):<div className="h-full w-full opacity-0">.</div>}
+                      {stage.cards?.length > 0
+                        ? stage.cards.map(card => <MiniCard key={card.id} card={card} />)
+                        : <div className="h-full w-full opacity-0">.</div>
+                      }
                     </div>
 
                     {addingToStageId===stage.id?(
@@ -288,7 +339,7 @@ export default function Board() {
                 </div>
               ))}
 
-              <div onDragOver={e=>e.preventDefault()} className={`min-w-[270px] w-[270px] rounded-xl p-3 flex flex-col justify-start items-center border border-dashed ${isDarkMode?'border-slate-700 hover:border-slate-500 bg-slate-800/30':'border-slate-300 hover:border-slate-400 bg-slate-50/50'}`}>
+              <div onDragOver={e=>e.preventDefault()} className={`min-w-[280px] w-[280px] rounded-xl p-3 flex flex-col justify-start items-center border border-dashed ${isDarkMode?'border-slate-700 hover:border-slate-500 bg-slate-800/30':'border-slate-300 hover:border-slate-400 bg-slate-50/50'}`}>
                 {addingStageToBoardId===activeBoard.id?(
                   <div className="w-full"><input type="text" autoFocus value={newStageName} onChange={e=>setNewStageName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleCreateNewStage(activeBoard.id)} onBlur={()=>handleCreateNewStage(activeBoard.id)} className={`w-full p-2 rounded border focus:outline-none focus:ring-2 focus:ring-blue-400 font-bold text-xs text-center ${isDarkMode?'bg-slate-900 border-slate-600 text-white':'bg-white border-slate-300 text-slate-800'}`} placeholder="Nome da Etapa..."/></div>
                 ):(
