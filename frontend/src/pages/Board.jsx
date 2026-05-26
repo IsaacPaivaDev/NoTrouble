@@ -16,17 +16,24 @@ const BG_MAP = {
   forest:   { dark: 'bg-gradient-to-br from-emerald-900 via-slate-900 to-black', light: 'bg-gradient-to-br from-emerald-100 via-green-50 to-white' },
 }
 
+const IconSort = ({className="w-3.5 h-3.5"}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12"/></svg>
+
 export default function Board() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { isDarkMode } = useTheme()
 
-  // Background synced com Dashboard
   const savedBg = localStorage.getItem('notrouble_bg') || 'default'
 
   const [viewMode, setViewMode] = useState('kanban')
   const [activeBoardId, setActiveBoardId] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
+
+  // Ordenacao por coluna
+  const [stageSort, setStageSort] = useState({})
+  const getSortMode = (stageId) => stageSort[stageId] || 'date_asc'
+  const setSortMode = (stageId, mode) => setStageSort(prev => ({ ...prev, [stageId]: mode }))
+  const [openSortMenu, setOpenSortMenu] = useState(null)
 
   const [isDragging, setIsDragging] = useState(false)
   const [draggingType, setDraggingType] = useState(null)
@@ -56,7 +63,6 @@ export default function Board() {
   const handleCreateNewStage = (boardId) => { if (!newStageName.trim()) { setAddingStageToBoardId(null); return }; createStage(boardId, newStageName); setNewStageName(""); setAddingStageToBoardId(null) }
   const saveStageEdit = (stageId) => { if (editStageName.trim()) { updateStage(stageId, editStageName) }; setEditingStageId(null) }
   const openModal = (cardId) => { setSelectedCardId(cardId); setIsModalOpen(true) }
-
   const cleanupDrag = useCallback(() => { setIsDragging(false); setDraggingType(null); setDraggedStageId(null); setDragOverStageId(null) }, [])
 
   const urlBoardId = searchParams.get('id')
@@ -74,19 +80,28 @@ export default function Board() {
     setIsCreateBoardModalOpen(false); setNewBoardName(""); setNewBoardStages(["A Fazer", "Em Andamento", "Concluido"])
   }
 
+  // Filtra + ordena cards por coluna
   const filteredStages = useMemo(() => {
     if (!activeBoard) return []
     const lastId = activeBoard.stages.length > 0 ? activeBoard.stages[activeBoard.stages.length - 1].id : null
-    return activeBoard.stages.map(stage => ({
-      ...stage,
-      cards: stage.cards.filter(card => {
+    return activeBoard.stages.map(stage => {
+      let cards = stage.cards.filter(card => {
         if (activeFilter === 'all') return true
         if (activeFilter === 'completed') return stage.id === lastId
         if (activeFilter === 'delayed') return isOverdue(card.due_date) && stage.id !== lastId
         return true
       })
-    }))
-  }, [activeBoard, activeFilter])
+      const mode = getSortMode(stage.id)
+      cards = [...cards].sort((a, b) => {
+        if (mode === 'date_asc') return (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1
+        if (mode === 'date_desc') return (b.due_date || '') < (a.due_date || '') ? -1 : 1
+        if (mode === 'created_desc') return (b.created_at || '') < (a.created_at || '') ? -1 : 1
+        if (mode === 'tag') return (a.tags?.[0]?.name || 'zzz').localeCompare(b.tags?.[0]?.name || 'zzz')
+        return 0
+      })
+      return { ...stage, cards }
+    })
+  }, [activeBoard, activeFilter, stageSort])
 
   const displayStages = useMemo(() => {
     let stages = [...filteredStages]
@@ -104,7 +119,6 @@ export default function Board() {
   const bgClass = isWp ? '' : ((BG_MAP[savedBg] || BG_MAP.default)[isDarkMode ? 'dark' : 'light'])
   const bgStyle = isWp ? { backgroundImage: `url(${mediaUrl(wpUrl)})` } : undefined
 
-  // View mode toggle
   const headerActions = (
     <div className={`flex rounded-lg overflow-hidden border ${isDarkMode ? 'border-slate-600 bg-slate-800' : 'border-slate-200 bg-white'}`}>
       <button onClick={() => setViewMode('kanban')} className={`px-3 py-1.5 text-xs font-bold flex items-center gap-1.5 transition-colors ${viewMode === 'kanban' ? 'bg-blue-600 text-white' : (isDarkMode ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100')}`}><IconKanban /> Kanban</button>
@@ -114,11 +128,17 @@ export default function Board() {
 
   if (loading && boards.length === 0) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-slate-900">Carregando...</div>
 
-  // Contagens pro resumo
   const lastStageId = activeBoard?.stages.length > 0 ? activeBoard.stages[activeBoard.stages.length - 1].id : null
   const totalInBoard = activeBoard?.stages.reduce((a, s) => a + s.cards.length, 0) || 0
   const doneInBoard = lastStageId ? activeBoard.stages.filter(s => s.id === lastStageId).reduce((a, s) => a + s.cards.length, 0) : 0
   const lateInBoard = activeBoard?.stages.filter(s => s.id !== lastStageId).reduce((a, s) => a + s.cards.filter(c => isOverdue(c.due_date)).length, 0) || 0
+
+  const SORT_OPTIONS = [
+    { key: 'date_asc', label: 'Data mais proxima' },
+    { key: 'date_desc', label: 'Data mais distante' },
+    { key: 'created_desc', label: 'Mais recente primeiro' },
+    { key: 'tag', label: 'Por tag (A-Z)' },
+  ]
 
   return (
     <PageLayout boards={boards} currentUser={currentUser} activeBoardId={activeBoardId} onBoardSelect={(id) => { setActiveBoardId(id); setSearchParams({ id }); setActiveFilter('all') }} onCreateBoard={() => setIsCreateBoardModalOpen(true)} headerActions={headerActions} bgClass={bgClass} bgStyle={bgStyle}>
@@ -142,7 +162,6 @@ export default function Board() {
             <button onClick={() => deleteBoard(activeBoard.id)} className={`px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:scale-105 flex items-center gap-1.5 ${isDarkMode ? 'bg-red-900/20 border-red-800 text-red-500 hover:bg-red-900/40' : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'}`}><IconTrash /> Excluir Quadro</button>
           </div>
 
-          {/* Resumo + filtros + link relatorios */}
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div className="flex flex-wrap items-center gap-2">
               {[
@@ -155,9 +174,7 @@ export default function Board() {
                 </button>
               ))}
             </div>
-            <button onClick={() => navigate('/data')} className={`text-xs font-semibold transition-colors ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}>
-              Ver relatorios completos →
-            </button>
+            <button onClick={() => navigate('/data')} className={`text-xs font-semibold transition-colors ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}>Ver relatorios completos →</button>
           </div>
 
           {viewMode === 'list' ? (
@@ -165,7 +182,7 @@ export default function Board() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead className={`text-xs uppercase tracking-wider ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
-                    <tr><th className="p-4 font-bold">Titulo</th><th className="p-4 font-bold">Etapa</th><th className="p-4 font-bold">Responsavel</th><th className="p-4 font-bold">Prazo</th><th className="p-4 font-bold">Resultado</th><th className="p-4 font-bold text-right">Acoes</th></tr>
+                    <tr><th className="p-4 font-bold">Titulo</th><th className="p-4 font-bold">Etapa</th><th className="p-4 font-bold">Tags</th><th className="p-4 font-bold">Prazo</th><th className="p-4 font-bold">Resultado</th><th className="p-4 font-bold text-right">Acoes</th></tr>
                   </thead>
                   <tbody className={`divide-y ${isDarkMode ? 'divide-slate-700 text-slate-200' : 'divide-slate-100 text-slate-700'}`}>
                     {displayStages.flatMap(s => s.cards.map(c => ({...c, stageName: s.name}))).length === 0 ? (
@@ -177,7 +194,7 @@ export default function Board() {
                         <tr key={card.id} onClick={() => openModal(card.id)} className={`transition-colors cursor-pointer group ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
                           <td className="p-4 font-semibold text-sm group-hover:text-blue-500 flex items-center gap-2">{card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}{card.title}</td>
                           <td className="p-4"><span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${isDarkMode?'bg-slate-900 text-blue-400':'bg-blue-50 text-blue-600'}`}>{card.stageName}</span></td>
-                          <td className="p-4 text-sm">{card.assignee?<div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white font-bold" style={{backgroundColor:getColorFromString(card.assignee.username)}}>{getInitials(card.assignee.first_name,card.assignee.last_name,card.assignee.username)||card.assignee.username.substring(0,2).toUpperCase()}</div>{card.assignee.first_name||card.assignee.username}</div>:'-'}</td>
+                          <td className="p-4"><div className="flex flex-wrap gap-1">{card.tags?.slice(0,3).map(t=><span key={t.id} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white" style={{backgroundColor:t.color}}>{t.name}</span>)}</div></td>
                           <td className={`p-4 text-sm ${isOverdue(card.due_date)?'text-red-500':''}`}>{card.due_date?formatDate(card.due_date):'-'}</td>
                           <td className="p-4 text-sm font-bold">{hasF?<span className={result<0?'text-red-500':'text-green-500'}>{formatCurrency(result)}</span>:'-'}</td>
                           <td className="p-4 text-right"><button onClick={e=>{e.stopPropagation();deleteCard(card.id)}} className="p-2 text-slate-400 hover:text-red-500 rounded-lg"><IconTrash/></button></td>
@@ -199,6 +216,7 @@ export default function Board() {
                   className={`rounded-xl p-3 min-w-[270px] w-[270px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-180px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
                 >
                   <div className={`transition-opacity duration-200 flex flex-col h-full ${draggedStageId===stage.id?'opacity-0':'opacity-100'}`}>
+                    {/* Header da coluna */}
                     <div className="mb-3 flex items-center justify-between group/header">
                       {editingStageId===stage.id?(
                         <input type="text" autoFocus value={editStageName} onChange={e=>setEditStageName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveStageEdit(stage.id)} onBlur={()=>saveStageEdit(stage.id)} className={`w-full p-1 rounded border focus:outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-xs tracking-widest ${isDarkMode?'bg-slate-900 border-slate-600 text-white':'bg-white border-blue-300 text-slate-800'}`}/>
@@ -211,20 +229,45 @@ export default function Board() {
                           </div>
                         </div>
                       )}
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDarkMode?'bg-blue-900/50 text-blue-400':'bg-blue-200 text-blue-800'}`}>{stage.cards?.length||0}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDarkMode?'bg-blue-900/50 text-blue-400':'bg-blue-200 text-blue-800'}`}>{stage.cards?.length||0}</span>
+                        {/* Menu de ordenacao */}
+                        <div className="relative">
+                          <button onClick={(e)=>{e.stopPropagation();setOpenSortMenu(openSortMenu===stage.id?null:stage.id)}} className={`p-0.5 rounded opacity-0 group-hover/header:opacity-100 transition-opacity ${isDarkMode?'hover:bg-slate-600 text-slate-400':'hover:bg-slate-200 text-slate-500'}`} title="Ordenar"><IconSort/></button>
+                          {openSortMenu===stage.id&&(
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={()=>setOpenSortMenu(null)}/>
+                              <div className={`absolute right-0 top-full mt-1 w-44 rounded-lg border shadow-xl z-50 overflow-hidden ${isDarkMode?'bg-slate-800 border-slate-600':'bg-white border-slate-200'}`}>
+                                {SORT_OPTIONS.map(opt=>(
+                                  <button key={opt.key} onClick={(e)=>{e.stopPropagation();setSortMode(stage.id,opt.key);setOpenSortMenu(null)}} className={`w-full text-left px-3 py-2 text-xs font-semibold transition-colors ${getSortMode(stage.id)===opt.key?'bg-blue-600 text-white':(isDarkMode?'text-slate-200 hover:bg-slate-700':'text-slate-700 hover:bg-slate-100')}`}>{opt.label}</button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
+                    {/* Cards */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2.5 pb-2 pr-1 min-h-[50px]">
                       {stage.cards?.length>0?stage.cards.map((card)=>{
                         const result=parseFloat(card.estimated_value||0)-parseFloat(card.invested_value||0)
                         const hasF=card.estimated_value||card.invested_value
                         return(
                           <div key={card.id} draggable onDragStart={e=>{e.stopPropagation();e.dataTransfer.setData('type','card');e.dataTransfer.setData('card_id',card.id);setIsDragging(true);setDraggingType('card')}} onDragEnd={cleanupDrag} onClick={()=>openModal(card.id)} className={`card-hover p-2.5 rounded-md border cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md group animate-fade-in transition-colors ${isDarkMode?'bg-slate-700 border-slate-600':'bg-white border-slate-200'}`}>
-                            <div className="flex items-start justify-between gap-1 mb-2">
+                            <div className="flex items-start justify-between gap-1 mb-1.5">
                               <p className={`font-medium text-[13px] leading-snug group-hover:text-blue-500 flex-1 ${isDarkMode?'text-slate-100':'text-slate-800'}`}>{card.title}</p>
                               {card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}
                             </div>
-                            {card.tags?.length>0&&<div className="flex flex-wrap gap-1 mb-2">{card.tags.slice(0,3).map(t=><div key={t.id} className="h-2 w-8 rounded-full" style={{backgroundColor:t.color}} title={t.name}/>)}</div>}
+
+                            {/* Tags com NOME */}
+                            {card.tags?.length>0&&(
+                              <div className="flex flex-wrap gap-1 mb-2">
+                                {card.tags.slice(0,4).map(t=><span key={t.id} className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white truncate max-w-[80px]" style={{backgroundColor:t.color}}>{t.name}</span>)}
+                                {card.tags.length>4&&<span className={`text-[9px] font-bold ${isDarkMode?'text-slate-400':'text-slate-500'}`}>+{card.tags.length-4}</span>}
+                              </div>
+                            )}
+
                             <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-semibold ${isDarkMode?'text-slate-400':'text-slate-500'}`}>
                               {card.due_date&&<span className={`flex items-center gap-1 ${isOverdue(card.due_date)?'text-red-500':''}`}><IconCalendar/>{formatDate(card.due_date)}</span>}
                               {card.checklist_count>0&&<span className="flex items-center gap-1"><IconCheck/>{card.checklist_done}/{card.checklist_count}</span>}
