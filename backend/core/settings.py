@@ -6,20 +6,16 @@ import os
 from pathlib import Path
 from datetime import timedelta
 import dj_database_url  # 🚀 Lê a URL do Supabase na nuvem
-from dotenv import load_dotenv  # 🚀 Importação adicionada para ler o .env local
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# 🚀 Carrega as variáveis do arquivo .env (se ele existir na raiz do backend)
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(BASE_DIR, '.env'))
+except ImportError:
+    pass
 
 
-# =====================================================================
-# 🔐 SECURITY
-# =====================================================================
-
-# Em PRODUÇÃO (Render), defina SECRET_KEY como env var.
-# O fallback existe só pra você rodar local sem dor de cabeça.
 SECRET_KEY = os.environ.get(
     'SECRET_KEY',
     'django-insecure-$e0=!uahimk0671+3@-&l-vymjlz%el6zh8pjr88%k)+e@$4+^'
