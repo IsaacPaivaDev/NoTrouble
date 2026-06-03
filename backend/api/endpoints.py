@@ -9,6 +9,7 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.hashers import make_password
 from django.core.mail import send_mail
 from django.conf import settings
+from django.utils import timezone
 
 from ninja import NinjaAPI, Schema, File
 from ninja.files import UploadedFile
@@ -42,51 +43,22 @@ api = NinjaAPI(title="Notrouble API", auth=JWTAuth())
 
 # =============================================================================
 # HELPERS DE OWNERSHIP
-#
-# Toda rota que recebe um ID de Card/Checklist/Comment/Attachment passa pela
-# empresa do usuario autenticado. Sem isso, qualquer usuario logado consegue
-# acessar dados de qualquer empresa se souber o UUID (defesa em profundidade).
 # =============================================================================
 
 def get_card_for_user(user, card_id):
-    return get_object_or_404(
-        Card,
-        id=card_id,
-        stage__board__company=user.company,
-    )
-
+    return get_object_or_404(Card, id=card_id, stage__board__company=user.company)
 
 def get_checklist_for_user(user, item_id):
-    return get_object_or_404(
-        ChecklistItem,
-        id=item_id,
-        card__stage__board__company=user.company,
-    )
-
+    return get_object_or_404(ChecklistItem, id=item_id, card__stage__board__company=user.company)
 
 def get_comment_for_user(user, comment_id):
-    return get_object_or_404(
-        Comment,
-        id=comment_id,
-        card__stage__board__company=user.company,
-    )
-
+    return get_object_or_404(Comment, id=comment_id, card__stage__board__company=user.company)
 
 def get_attachment_for_user(user, attachment_id):
-    return get_object_or_404(
-        Attachment,
-        id=attachment_id,
-        card__stage__board__company=user.company,
-    )
-
+    return get_object_or_404(Attachment, id=attachment_id, card__stage__board__company=user.company)
 
 def get_stage_for_user(user, stage_id):
-    return get_object_or_404(
-        Stage,
-        id=stage_id,
-        board__company=user.company,
-    )
-
+    return get_object_or_404(Stage, id=stage_id, board__company=user.company)
 
 def get_board_for_user(user, board_id):
     return get_object_or_404(Board, id=board_id, company=user.company)
@@ -103,11 +75,9 @@ class RegisterSchema(Schema):
     email: str
     password: str
 
-
 class VerifySchema(Schema):
     email: str
     code: str
-
 
 class CompanyOutSchema(Schema):
     id: uuid.UUID
@@ -118,7 +88,6 @@ class CompanyOutSchema(Schema):
     @staticmethod
     def resolve_wallpaper_url(obj):
         return obj.wallpaper.url if obj.wallpaper else None
-
 
 class UserSchema(Schema):
     id: int
@@ -133,21 +102,17 @@ class UserSchema(Schema):
     def resolve_avatar_url(obj):
         return obj.avatar.url if hasattr(obj, 'avatar') and obj.avatar else None
 
-
 class TagSchema(Schema):
     id: uuid.UUID
     name: str
     color: str
 
-
 class TagCreateSchema(Schema):
     name: str
     color: str
 
-
 class CardTagSchema(Schema):
     tag_id: uuid.UUID
-
 
 # --- Checklist ---
 
@@ -156,17 +121,12 @@ class ChecklistItemSchema(Schema):
     title: str
     is_done: bool
 
-
 class ChecklistCreateSchema(Schema):
     title: str
 
-
-# Schema flexivel: permite editar titulo, marcar/desmarcar, ou ambos.
-# Substitui o antigo ChecklistToggleSchema, que so tinha is_done.
 class ChecklistUpdateSchema(Schema):
     title: Optional[str] = None
     is_done: Optional[bool] = None
-
 
 # --- Comments ---
 
@@ -175,7 +135,7 @@ class CommentSchema(Schema):
     text: str
     created_at: datetime
     user_name: Optional[str] = None
-    user_id: Optional[int] = None  # Frontend usa para decidir se mostra botao "excluir"
+    user_id: Optional[int] = None
 
     @staticmethod
     def resolve_user_name(obj):
@@ -187,10 +147,8 @@ class CommentSchema(Schema):
     def resolve_user_id(obj):
         return obj.user.id if obj.user else None
 
-
 class CommentCreateSchema(Schema):
     text: str
-
 
 # --- Anexos ---
 
@@ -203,7 +161,6 @@ class AttachmentSchema(Schema):
     def resolve_url(obj):
         return obj.file.url if obj.file else ""
 
-
 # --- Card ---
 
 class CardOutSchema(Schema):
@@ -213,37 +170,35 @@ class CardOutSchema(Schema):
     stage_id: uuid.UUID
     tags: List[TagSchema] = []
     assignee: Optional[UserSchema] = None
-    due_date: Optional[datetime] = None      # mudou para datetime
-    priority: str = 'medium'                  # novo campo
+    due_date: Optional[datetime] = None
+    priority: str = 'medium'
     estimated_value: Optional[Decimal] = None
     invested_value: Optional[Decimal] = None
     payment_method: Optional[str] = None
-    payment_date: Optional[date] = None       # novo campo
+    payment_date: Optional[date] = None
+    is_completed: bool = False
     checklist_count: int = 0
     checklist_done: int = 0
-
 
 class CardCreateSchema(Schema):
     title: str
     stage_id: uuid.UUID
 
-
 class CardMoveSchema(Schema):
     stage_id: uuid.UUID
-
 
 class CardUpdateSchema(Schema):
     title: str
     description: Optional[str] = None
     stage_id: uuid.UUID
-    due_date: Optional[datetime] = None       # mudou para datetime
-    priority: Optional[str] = 'medium'        # novo
+    due_date: Optional[datetime] = None
+    priority: Optional[str] = 'medium'
     estimated_value: Optional[Decimal] = None
     invested_value: Optional[Decimal] = None
     payment_method: Optional[str] = None
-    payment_date: Optional[date] = None       # novo
+    payment_date: Optional[date] = None
     assignee_id: Optional[int] = None
-
+    is_completed: Optional[bool] = None
 
 class CardDetailSchema(Schema):
     """Schema completo usado quando o card e aberto no modal."""
@@ -251,18 +206,18 @@ class CardDetailSchema(Schema):
     title: str
     description: Optional[str] = None
     stage_id: uuid.UUID
-    due_date: Optional[datetime] = None       # mudou para datetime
-    priority: str = 'medium'                  # novo
+    due_date: Optional[datetime] = None
+    priority: str = 'medium'
     estimated_value: Optional[Decimal] = None
     invested_value: Optional[Decimal] = None
     payment_method: Optional[str] = None
-    payment_date: Optional[date] = None       # novo
+    payment_date: Optional[date] = None
+    is_completed: bool = False
     tags: List[TagSchema] = []
     assignee: Optional[UserSchema] = None
     checklist: List[ChecklistItemSchema] = []
     comments: List[CommentSchema] = []
     attachments: List[AttachmentSchema] = []
-
 
 # --- Stage / Board ---
 
@@ -272,30 +227,27 @@ class StageSchema(Schema):
     order: int
     cards: List[CardOutSchema]
 
-
 class StageCreateSchema(Schema):
     name: str
     board_id: uuid.UUID
 
-
 class StageUpdateSchema(Schema):
     name: str
 
-
 class StageReorderSchema(Schema):
     stage_ids: List[uuid.UUID]
-
 
 class BoardSchema(Schema):
     id: uuid.UUID
     name: str
     stages: List[StageSchema]
 
-
 class BoardCreateSchema(Schema):
     name: str
     stages: List[str] = ["A Fazer", "Em Andamento", "Concluido"]
 
+class BoardUpdateSchema(Schema):
+    name: str
 
 class BoardHealthSchema(Schema):
     board_id: uuid.UUID
@@ -305,7 +257,6 @@ class BoardHealthSchema(Schema):
     completed_cards: int
     delayed_cards: int
     health_score: int
-
 
 # --- Activity Log ---
 
@@ -341,14 +292,10 @@ def register_user(request, payload: RegisterSchema):
     company = Company.objects.create(name=payload.company_name)
 
     user = User.objects.create(
-        username=payload.email,
-        email=payload.email,
-        first_name=payload.first_name,
-        last_name=payload.last_name,
+        username=payload.email, email=payload.email,
+        first_name=payload.first_name, last_name=payload.last_name,
         password=make_password(payload.password),
-        company=company,
-        role='ADMIN',
-        is_active=False,
+        company=company, role='ADMIN', is_active=False,
     )
 
     board = Board.objects.create(name="Meu Primeiro Quadro", company=company)
@@ -362,14 +309,9 @@ def register_user(request, payload: RegisterSchema):
     try:
         send_mail(
             subject='Seu Codigo de Acesso - NoTrouble',
-            message=(
-                f'Ola, {payload.first_name}!\n\n'
-                f'Seu codigo de verificacao e: {code}\n\n'
-                f'Bem-vindo(a) ao NoTrouble!'
-            ),
+            message=f'Ola, {payload.first_name}!\n\nSeu codigo de verificacao e: {code}\n\nBem-vindo(a) ao NoTrouble!',
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[payload.email],
-            fail_silently=False,
+            recipient_list=[payload.email], fail_silently=False,
         )
     except Exception as e:
         print(f"ERRO FATAL AO ENVIAR E-MAIL: {e}")
@@ -382,10 +324,8 @@ def register_user(request, payload: RegisterSchema):
 @api.post("/verify/", auth=None)
 def verify_code(request, payload: VerifySchema):
     user = get_object_or_404(User, username=payload.email)
-
     if user.is_active:
         return api.create_response(request, {"success": False, "message": "Conta ja ativada."}, status=400)
-
     try:
         verification = user.verification_code
         if verification.code == payload.code:
@@ -406,29 +346,20 @@ def verify_code(request, payload: VerifySchema):
 def get_current_user(request):
     return request.auth
 
-
 class UserUpdateSchema(Schema):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     password: Optional[str] = None
 
-
 @api.put("/users/me/update/")
 def update_profile(request, payload: UserUpdateSchema):
     user = request.auth
-    if payload.first_name is not None:
-        user.first_name = payload.first_name
-    if payload.last_name is not None:
-        user.last_name = payload.last_name
-    if payload.password:
-        user.password = make_password(payload.password)
+    if payload.first_name is not None: user.first_name = payload.first_name
+    if payload.last_name is not None: user.last_name = payload.last_name
+    if payload.password: user.password = make_password(payload.password)
     user.save()
-    ActivityLog.objects.create(
-        company=user.company, user=user, action='UPDATED',
-        description="atualizou as informacoes do proprio perfil",
-    )
+    ActivityLog.objects.create(company=user.company, user=user, action='UPDATED', description="atualizou as informacoes do proprio perfil")
     return {"success": True, "message": "Perfil atualizado!"}
-
 
 @api.post("/users/me/avatar/")
 def upload_avatar(request, file: UploadedFile = File(...)):
@@ -436,7 +367,6 @@ def upload_avatar(request, file: UploadedFile = File(...)):
     user.avatar = file
     user.save()
     return {"success": True, "avatar_url": user.avatar.url}
-
 
 @api.get("/users/", response=List[UserSchema])
 def list_users(request):
@@ -451,7 +381,6 @@ class InviteCreateSchema(Schema):
     email: str
     role: str = 'MEMBER'
 
-
 class InviteOutSchema(Schema):
     id: uuid.UUID
     email: str
@@ -459,70 +388,43 @@ class InviteOutSchema(Schema):
     is_used: bool
     created_at: datetime
 
-
 class AcceptInviteSchema(Schema):
     token: str
     first_name: str
     last_name: str
     password: str
 
-
 @api.post("/team/invite/")
 def invite_member(request, payload: InviteCreateSchema):
     user = request.auth
     if user.role not in ['ADMIN', 'MANAGER']:
         return api.create_response(request, {"success": False, "message": "Apenas Administradores ou Gerentes podem enviar convites."}, status=403)
-
     company = user.company
     current_users_count = User.objects.filter(company=company).count()
     pending_invites_count = TeamInvite.objects.filter(company=company, is_used=False).count()
-
     if (current_users_count + pending_invites_count) >= company.max_users:
-        return api.create_response(
-            request,
-            {"success": False, "message": f"Limite de licencas atingido ({company.max_users}). Faca upgrade do plano para adicionar mais membros."},
-            status=403,
-        )
-
+        return api.create_response(request, {"success": False, "message": f"Limite de licencas atingido ({company.max_users}). Faca upgrade do plano para adicionar mais membros."}, status=403)
     token = str(uuid.uuid4())
     TeamInvite.objects.create(company=company, email=payload.email, role=payload.role, token=token)
-    ActivityLog.objects.create(
-        company=company, user=user, action='CREATED',
-        description=f"enviou convite para {payload.email} ({payload.role})",
-    )
-
-    # URL do frontend vem de env var. Local default e localhost:5173.
-    # Em producao, definir FRONTEND_URL no Render para a URL da Vercel.
+    ActivityLog.objects.create(company=company, user=user, action='CREATED', description=f"enviou convite para {payload.email} ({payload.role})")
     frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
     invite_link = f"{frontend_url}/invite?token={token}"
-
-    print(f"\n{'=' * 60}")
-    print(f"E-MAIL DE CONVITE PARA: {payload.email}")
-    print(f"LINK DE ACESSO: {invite_link}")
-    print(f"{'=' * 60}\n")
-
+    print(f"\n{'=' * 60}\nE-MAIL DE CONVITE PARA: {payload.email}\nLINK DE ACESSO: {invite_link}\n{'=' * 60}\n")
     return {"success": True, "message": "Convite enviado com sucesso!"}
-
 
 @api.get("/team/invites/", response=List[InviteOutSchema])
 def list_pending_invites(request):
     return TeamInvite.objects.filter(company=request.auth.company, is_used=False).order_by('-created_at')
 
-
 @api.delete("/team/invites/{invite_id}/")
 def cancel_invite(request, invite_id: uuid.UUID):
     if request.auth.role not in ['ADMIN', 'MANAGER']:
         return api.create_response(request, {"success": False, "message": "Sem permissao."}, status=403)
-
     invite = get_object_or_404(TeamInvite, id=invite_id, company=request.auth.company)
     invite_email = invite.email
     invite.delete()
-    ActivityLog.objects.create(
-        company=request.auth.company, user=request.auth, action='DELETED',
-        description=f"cancelou o convite de {invite_email}",
-    )
+    ActivityLog.objects.create(company=request.auth.company, user=request.auth, action='DELETED', description=f"cancelou o convite de {invite_email}")
     return {"success": True, "message": "Convite cancelado."}
-
 
 @api.post("/team/invite/accept/", auth=None)
 def accept_invite(request, payload: AcceptInviteSchema):
@@ -530,47 +432,31 @@ def accept_invite(request, payload: AcceptInviteSchema):
         invite = TeamInvite.objects.get(token=payload.token)
     except TeamInvite.DoesNotExist:
         return api.create_response(request, {"success": False, "message": "Convite invalido ou nao encontrado."}, status=400)
-
     if invite.is_used:
         return api.create_response(request, {"success": False, "message": "Este convite ja foi utilizado."}, status=400)
-
     if User.objects.filter(username=invite.email).exists():
         return api.create_response(request, {"success": False, "message": "O e-mail deste convite ja possui cadastro."}, status=400)
-
     user = User.objects.create(
-        username=invite.email,
-        email=invite.email,
-        first_name=payload.first_name,
-        last_name=payload.last_name,
+        username=invite.email, email=invite.email,
+        first_name=payload.first_name, last_name=payload.last_name,
         password=make_password(payload.password),
-        company=invite.company,
-        role=invite.role,
-        is_active=True,
+        company=invite.company, role=invite.role, is_active=True,
     )
     invite.is_used = True
     invite.save()
-    ActivityLog.objects.create(
-        company=invite.company, user=user, action='CREATED',
-        description="entrou na equipe atraves do convite",
-    )
+    ActivityLog.objects.create(company=invite.company, user=user, action='CREATED', description="entrou na equipe atraves do convite")
     return {"success": True, "message": "Conta criada com sucesso! Faca login."}
-
 
 @api.delete("/team/users/{user_id}/")
 def remove_team_member(request, user_id: int):
     if request.auth.role != 'ADMIN':
         return api.create_response(request, {"success": False, "message": "Apenas o Administrador pode excluir membros."}, status=403)
-
     member_to_remove = get_object_or_404(User, id=user_id, company=request.auth.company)
     if member_to_remove.id == request.auth.id:
         return api.create_response(request, {"success": False, "message": "Voce nao pode se auto-excluir por aqui."}, status=400)
-
     member_email = member_to_remove.email
     member_to_remove.delete()
-    ActivityLog.objects.create(
-        company=request.auth.company, user=request.auth, action='DELETED',
-        description=f"removeu o usuario {member_email} da empresa",
-    )
+    ActivityLog.objects.create(company=request.auth.company, user=request.auth, action='DELETED', description=f"removeu o usuario {member_email} da empresa")
     return {"success": True, "message": "Membro removido da equipe."}
 
 
@@ -582,30 +468,21 @@ class CompanyUpdateSchema(Schema):
     name: Optional[str] = None
     theme_hex: Optional[str] = None
 
-
 @api.put("/company/update/")
 def update_company(request, payload: CompanyUpdateSchema):
     if request.auth.role != 'ADMIN':
         return api.create_response(request, {"success": False, "message": "Apenas admins alteram a empresa."}, status=403)
-
     company = request.auth.company
-    if payload.name:
-        company.name = payload.name
-    if payload.theme_hex:
-        company.theme_hex = payload.theme_hex
+    if payload.name: company.name = payload.name
+    if payload.theme_hex: company.theme_hex = payload.theme_hex
     company.save()
-    ActivityLog.objects.create(
-        company=company, user=request.auth, action='UPDATED',
-        description="atualizou as configuracoes da empresa",
-    )
+    ActivityLog.objects.create(company=company, user=request.auth, action='UPDATED', description="atualizou as configuracoes da empresa")
     return {"success": True, "message": "Empresa atualizada com sucesso!"}
-
 
 @api.post("/company/wallpaper/")
 def upload_wallpaper(request, file: UploadedFile = File(...)):
     if request.auth.role != 'ADMIN':
         return api.create_response(request, {"success": False, "message": "Acesso negado."}, status=403)
-
     company = request.auth.company
     company.wallpaper = file
     company.save()
@@ -625,14 +502,8 @@ def create_board(request, payload: BoardCreateSchema):
             Stage.objects.create(name=stage_name.strip(), board=board, order=index)
     if not payload.stages:
         Stage.objects.create(name="Nova Etapa", board=board, order=0)
-    ActivityLog.objects.create(
-        company=user.company, user=user, board=board, action='CREATED',
-        description=f"criou o quadro '{board.name}'",
-    )
-    return Board.objects.prefetch_related(
-        'stages', 'stages__cards', 'stages__cards__tags',
-        'stages__cards__assignee', 'stages__cards__checklist',
-    ).get(id=board.id)
+    ActivityLog.objects.create(company=user.company, user=user, board=board, action='CREATED', description=f"criou o quadro '{board.name}'")
+    return Board.objects.prefetch_related('stages', 'stages__cards', 'stages__cards__tags', 'stages__cards__assignee', 'stages__cards__checklist').get(id=board.id)
 
 
 @api.get("/boards/", response=List[BoardSchema])
@@ -650,15 +521,21 @@ def list_boards(request):
     return boards
 
 
+@api.put("/boards/{board_id}/", response=BoardSchema)
+def update_board(request, board_id: uuid.UUID, payload: BoardUpdateSchema):
+    board = get_board_for_user(request.auth, board_id)
+    board.name = payload.name
+    board.save()
+    AnalyticsEngine.log_activity(request.auth, 'UPDATED', f"renomeou o quadro para '{payload.name}'", board=board)
+    return Board.objects.prefetch_related('stages', 'stages__cards', 'stages__cards__tags', 'stages__cards__assignee', 'stages__cards__checklist').get(id=board.id)
+
+
 @api.delete("/boards/{board_id}/")
 def delete_board(request, board_id: uuid.UUID):
     board = get_board_for_user(request.auth, board_id)
     board_name = board.name
     board.delete()
-    ActivityLog.objects.create(
-        company=request.auth.company, user=request.auth, action='DELETED',
-        description=f"excluiu permanentemente o quadro '{board_name}'",
-    )
+    ActivityLog.objects.create(company=request.auth.company, user=request.auth, action='DELETED', description=f"excluiu permanentemente o quadro '{board_name}'")
     return {"success": True, "message": "Quadro excluido!"}
 
 
@@ -670,11 +547,9 @@ def delete_board(request, board_id: uuid.UUID):
 def list_tags(request):
     return Tag.objects.filter(company=request.auth.company)
 
-
 @api.post("/tags/", response=TagSchema)
 def create_tag(request, payload: TagCreateSchema):
     return Tag.objects.create(name=payload.name, color=payload.color, company=request.auth.company)
-
 
 @api.put("/tags/{tag_id}/", response=TagSchema)
 def update_tag(request, tag_id: uuid.UUID, payload: TagCreateSchema):
@@ -683,7 +558,6 @@ def update_tag(request, tag_id: uuid.UUID, payload: TagCreateSchema):
     tag.color = payload.color
     tag.save()
     return tag
-
 
 @api.delete("/tags/{tag_id}/")
 def delete_tag(request, tag_id: uuid.UUID):
@@ -697,13 +571,9 @@ def delete_tag(request, tag_id: uuid.UUID):
 
 @api.post("/cards/", response=CardOutSchema)
 def create_card(request, payload: CardCreateSchema):
-    # Valida que a stage pertence a empresa do usuario antes de criar
     stage = get_stage_for_user(request.auth, payload.stage_id)
     card = Card.objects.create(title=payload.title, stage=stage)
-    ActivityLog.objects.create(
-        company=request.auth.company, user=request.auth, board=stage.board, card=card,
-        action='CREATED', description=f"criou o card '{card.title}'",
-    )
+    ActivityLog.objects.create(company=request.auth.company, user=request.auth, board=stage.board, card=card, action='CREATED', description=f"criou o card '{card.title}'")
     return card
 
 
@@ -713,10 +583,7 @@ def move_card(request, card_id: uuid.UUID, payload: CardMoveSchema):
     if card.stage_id != payload.stage_id:
         new_stage = get_stage_for_user(request.auth, payload.stage_id)
         CardLog.objects.create(card=card, from_stage_id=card.stage_id, to_stage_id=payload.stage_id)
-        ActivityLog.objects.create(
-            company=request.auth.company, user=request.auth, board=new_stage.board, card=card,
-            action='MOVED', description=f"moveu o card '{card.title}' para a etapa '{new_stage.name}'",
-        )
+        ActivityLog.objects.create(company=request.auth.company, user=request.auth, board=new_stage.board, card=card, action='MOVED', description=f"moveu o card '{card.title}' para a etapa '{new_stage.name}'")
         card.stage_id = payload.stage_id
         card.save()
     return {"success": True, "message": "Card movido!"}
@@ -726,23 +593,17 @@ def move_card(request, card_id: uuid.UUID, payload: CardMoveSchema):
 def get_card(request, card_id: uuid.UUID):
     return get_object_or_404(
         Card.objects.prefetch_related('checklist', 'tags', 'assignee', 'comments__user', 'attachments'),
-        id=card_id,
-        stage__board__company=request.auth.company,
+        id=card_id, stage__board__company=request.auth.company,
     )
 
 
 @api.put("/cards/{card_id}/", response=CardDetailSchema)
 def update_card(request, card_id: uuid.UUID, payload: CardUpdateSchema):
     card = get_card_for_user(request.auth, card_id)
-
-    # Se mudou de stage, valida a nova stage e registra o movimento
     if card.stage_id != payload.stage_id:
         new_stage = get_stage_for_user(request.auth, payload.stage_id)
         CardLog.objects.create(card=card, from_stage_id=card.stage_id, to_stage_id=payload.stage_id)
-        ActivityLog.objects.create(
-            company=request.auth.company, user=request.auth, board=new_stage.board, card=card,
-            action='MOVED', description=f"moveu o card '{card.title}' para '{new_stage.name}'",
-        )
+        ActivityLog.objects.create(company=request.auth.company, user=request.auth, board=new_stage.board, card=card, action='MOVED', description=f"moveu o card '{card.title}' para '{new_stage.name}'")
 
     card.title = payload.title
     card.description = payload.description
@@ -753,20 +614,17 @@ def update_card(request, card_id: uuid.UUID, payload: CardUpdateSchema):
     card.invested_value = payload.invested_value
     card.payment_method = payload.payment_method
     card.payment_date = payload.payment_date
-
-    # assignee_id: None ou inteiro. Sempre atualiza (permite desatribuir).
     card.assignee_id = payload.assignee_id
 
+    if payload.is_completed is not None:
+        card.is_completed = payload.is_completed
+        card.completed_at = timezone.now() if payload.is_completed else None
+
     card.save()
-    ActivityLog.objects.create(
-        company=request.auth.company, user=request.auth, board=card.stage.board, card=card,
-        action='UPDATED', description=f"atualizou os detalhes do card '{card.title}'",
-    )
+    ActivityLog.objects.create(company=request.auth.company, user=request.auth, board=card.stage.board, card=card, action='UPDATED', description=f"atualizou os detalhes do card '{card.title}'")
     return card
 
 
-# PATCH para salvar apenas alguns campos (usado pelo "Salvar Descricao" do modal).
-# Aceita qualquer subset de campos do CardUpdateSchema; nao reseta o que nao veio.
 class CardPatchSchema(Schema):
     title: Optional[str] = None
     description: Optional[str] = None
@@ -778,6 +636,7 @@ class CardPatchSchema(Schema):
     payment_method: Optional[str] = None
     payment_date: Optional[date] = None
     assignee_id: Optional[int] = None
+    is_completed: Optional[bool] = None
 
 
 @api.patch("/cards/{card_id}/", response=CardDetailSchema)
@@ -786,8 +645,21 @@ def patch_card(request, card_id: uuid.UUID, payload: CardPatchSchema):
     data = payload.dict(exclude_unset=True)
     for field, value in data.items():
         setattr(card, field, value)
+    if 'is_completed' in data:
+        card.completed_at = timezone.now() if data['is_completed'] else None
     card.save()
     return card
+
+
+@api.patch("/cards/{card_id}/toggle-complete/")
+def toggle_card_complete(request, card_id: uuid.UUID):
+    card = get_card_for_user(request.auth, card_id)
+    card.is_completed = not card.is_completed
+    card.completed_at = timezone.now() if card.is_completed else None
+    card.save()
+    desc = f"marcou '{card.title}' como {'concluido' if card.is_completed else 'em andamento'}"
+    AnalyticsEngine.log_activity(request.auth, 'COMPLETED' if card.is_completed else 'UPDATED', desc, card=card)
+    return {"success": True, "is_completed": card.is_completed}
 
 
 @api.delete("/cards/{card_id}/")
@@ -796,10 +668,7 @@ def delete_card(request, card_id: uuid.UUID):
     board_ref = card.stage.board
     title_ref = card.title
     card.delete()
-    ActivityLog.objects.create(
-        company=request.auth.company, user=request.auth, board=board_ref, action='DELETED',
-        description=f"excluiu o card '{title_ref}'",
-    )
+    ActivityLog.objects.create(company=request.auth.company, user=request.auth, board=board_ref, action='DELETED', description=f"excluiu o card '{title_ref}'")
     return {"success": True, "message": "Card excluido permanentemente"}
 
 
@@ -812,26 +681,18 @@ def add_checklist_item(request, card_id: uuid.UUID, payload: ChecklistCreateSche
     card = get_card_for_user(request.auth, card_id)
     return ChecklistItem.objects.create(card=card, title=payload.title)
 
-
-# Substitui o antigo PUT que so aceitava is_done.
-# Agora aceita title (editar), is_done (marcar), ou ambos.
-# O frontend antigo que so manda is_done continua funcionando.
 @api.put("/checklist/{item_id}/", response=ChecklistItemSchema)
 def update_checklist_item(request, item_id: uuid.UUID, payload: ChecklistUpdateSchema):
     item = get_checklist_for_user(request.auth, item_id)
     data = payload.dict(exclude_unset=True)
-    if 'title' in data and data['title'] is not None:
-        item.title = data['title']
-    if 'is_done' in data and data['is_done'] is not None:
-        item.is_done = data['is_done']
+    if 'title' in data and data['title'] is not None: item.title = data['title']
+    if 'is_done' in data and data['is_done'] is not None: item.is_done = data['is_done']
     item.save()
     return item
 
-
 @api.delete("/checklist/{item_id}/")
 def delete_checklist_item(request, item_id: uuid.UUID):
-    item = get_checklist_for_user(request.auth, item_id)
-    item.delete()
+    get_checklist_for_user(request.auth, item_id).delete()
     return {"success": True}
 
 
@@ -844,18 +705,13 @@ def add_comment(request, card_id: uuid.UUID, payload: CommentCreateSchema):
     card = get_card_for_user(request.auth, card_id)
     return Comment.objects.create(card=card, text=payload.text, user=request.auth)
 
-
 @api.delete("/comments/{comment_id}/")
 def delete_comment(request, comment_id: uuid.UUID):
     comment = get_comment_for_user(request.auth, comment_id)
-
-    # Regra: o autor pode deletar seu proprio comentario.
-    # ADMIN e MANAGER tambem podem deletar comentarios alheios (moderacao).
     is_author = comment.user_id == request.auth.id
     is_moderator = request.auth.role in ('ADMIN', 'MANAGER')
     if not (is_author or is_moderator):
         return api.create_response(request, {"success": False, "message": "Sem permissao para excluir este comentario."}, status=403)
-
     comment.delete()
     return {"success": True}
 
@@ -870,7 +726,6 @@ def add_tag_to_card(request, card_id: uuid.UUID, payload: CardTagSchema):
     tag = get_object_or_404(Tag, id=payload.tag_id, company=request.auth.company)
     card.tags.add(tag)
     return {"success": True}
-
 
 @api.delete("/cards/{card_id}/tags/{tag_id}/")
 def remove_tag_from_card(request, card_id: uuid.UUID, tag_id: uuid.UUID):
@@ -890,11 +745,9 @@ def upload_attachment(request, card_id: uuid.UUID, file: UploadedFile = File(...
     attachment = Attachment.objects.create(card=card, file=file, filename=file.name)
     return {"id": attachment.id, "filename": attachment.filename, "url": attachment.file.url}
 
-
 @api.delete("/attachments/{attachment_id}/")
 def delete_attachment(request, attachment_id: uuid.UUID):
-    attachment = get_attachment_for_user(request.auth, attachment_id)
-    attachment.delete()
+    get_attachment_for_user(request.auth, attachment_id).delete()
     return {"success": True}
 
 
@@ -908,7 +761,6 @@ def create_stage(request, payload: StageCreateSchema):
     stage = Stage.objects.create(name=payload.name, board=board)
     return {"success": True, "id": stage.id, "name": stage.name}
 
-
 @api.put("/stages/{stage_id}/")
 def update_stage(request, stage_id: uuid.UUID, payload: StageUpdateSchema):
     stage = get_stage_for_user(request.auth, stage_id)
@@ -916,16 +768,13 @@ def update_stage(request, stage_id: uuid.UUID, payload: StageUpdateSchema):
     stage.save()
     return {"success": True}
 
-
 @api.delete("/stages/{stage_id}/")
 def delete_stage(request, stage_id: uuid.UUID):
     get_stage_for_user(request.auth, stage_id).delete()
     return {"success": True}
 
-
 @api.put("/boards/{board_id}/stages/reorder/")
 def reorder_stages(request, board_id: uuid.UUID, payload: StageReorderSchema):
-    # Garante que o board pertence a empresa
     get_board_for_user(request.auth, board_id)
     for index, s_id in enumerate(payload.stage_ids):
         Stage.objects.filter(id=s_id, board_id=board_id).update(order=index)
@@ -938,10 +787,8 @@ def reorder_stages(request, board_id: uuid.UUID, payload: StageReorderSchema):
 
 @api.get("/analytics/boards/{board_id}/health/", response=BoardHealthSchema)
 def board_health_metrics(request, board_id: uuid.UUID):
-    # Garante que o board pertence a empresa antes de calcular metricas
     get_board_for_user(request.auth, board_id)
     return AnalyticsEngine.get_board_health(board_id, request.auth)
-
 
 @api.get("/analytics/logs/", response=List[ActivityLogSchema])
 def get_activity_logs(request):
@@ -951,14 +798,11 @@ def get_activity_logs(request):
         logs = logs.filter(user=user)
     return logs.order_by('-created_at')[:50]
 
-
 class DashboardMetricsSchema(Schema):
     financial: dict
     productivity: dict
     tags: list
 
-
 @api.get("/analytics/dashboard/", response=DashboardMetricsSchema)
 def get_dashboard_metrics(request):
-
     return AnalyticsEngine.get_full_dashboard(request.auth)

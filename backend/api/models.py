@@ -34,12 +34,9 @@ class ActivityLog(models.Model):
 class Company(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
-
     theme_hex = models.CharField(max_length=7, default="#3B82F6")
     wallpaper = models.ImageField(upload_to='wallpapers/', null=True, blank=True)
-
     max_users = models.IntegerField(default=2)
-
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -53,10 +50,8 @@ class User(AbstractUser):
         ('MANAGER', 'Gerente de Projeto'),
         ('MEMBER', 'Membro da Equipe')
     )
-
     company = models.ForeignKey('Company', on_delete=models.CASCADE, null=True, blank=True, related_name='users')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='ADMIN')
-
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
 
     def __str__(self):
@@ -72,8 +67,6 @@ class VerificationCode(models.Model):
     def __str__(self):
         return f"Code {self.code} for {self.user.username}"
 
-
-# --- MODELAGEM DO KANBAN ---
 
 class Board(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -108,9 +101,7 @@ class Tag(models.Model):
         return self.name
 
 
-# --- O CARTAO ---
 class Card(models.Model):
-    # Choices de prioridade — usados pelo frontend (low/medium/high)
     PRIORITY_CHOICES = (
         ('low', 'Baixa'),
         ('medium', 'Media'),
@@ -121,27 +112,19 @@ class Card(models.Model):
     stage = models.ForeignKey(Stage, on_delete=models.CASCADE, related_name='cards')
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-
     tags = models.ManyToManyField(Tag, blank=True, related_name='cards')
-
-    # Trocado de DateField para DateTimeField — resolve bug de fuso horario.
-    # O frontend usa <input type="datetime-local"> e manda ISO completo.
     due_date = models.DateTimeField(null=True, blank=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
 
-    # Prioridade do card (visivel no kanban como icone)
-    priority = models.CharField(
-        max_length=10,
-        choices=PRIORITY_CHOICES,
-        default='medium',
-    )
-
-    # --- FINANCEIRO ---
+    # Financeiro
     estimated_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     invested_value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     payment_method = models.CharField(max_length=100, blank=True, null=True)
-
-    # Data em que o pagamento foi (ou sera) realizado — separada do due_date
     payment_date = models.DateField(null=True, blank=True)
+
+    # Conclusao — quando True, o card para de contar como atrasado
+    is_completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     assignee = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_cards')

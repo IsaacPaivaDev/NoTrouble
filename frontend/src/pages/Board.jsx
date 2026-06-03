@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useBoards } from '../hooks/useBoards'
 import { useTheme } from '../contexts/ThemeContext'
+import { apiFetch } from '../api/client'
 import PageLayout from '../components/PageLayout'
 import CardModal from '../components/CardModal'
 import { mediaUrl } from '../utils/media'
@@ -30,7 +31,6 @@ export default function Board() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { isDarkMode } = useTheme()
-
   const savedBg = localStorage.getItem('notrouble_bg') || 'default'
 
   const [viewMode, setViewMode] = useState('kanban')
@@ -41,6 +41,10 @@ export default function Board() {
   const getSortMode = (stageId) => stageSort[stageId] || 'date_asc'
   const setSortMode = (stageId, mode) => setStageSort(prev => ({ ...prev, [stageId]: mode }))
   const [openSortMenu, setOpenSortMenu] = useState(null)
+
+  // Edicao do nome do quadro
+  const [editingBoardName, setEditingBoardName] = useState(false)
+  const [editBoardNameValue, setEditBoardNameValue] = useState("")
 
   const [isDragging, setIsDragging] = useState(false)
   const [draggingType, setDraggingType] = useState(null)
@@ -72,6 +76,26 @@ export default function Board() {
   const openModal = (cardId) => { setSelectedCardId(cardId); setIsModalOpen(true) }
   const cleanupDrag = useCallback(() => { setIsDragging(false); setDraggingType(null); setDraggedStageId(null); setDragOverStageId(null) }, [])
 
+  // Renomear quadro
+  const startEditBoardName = () => { if (!activeBoard) return; setEditBoardNameValue(activeBoard.name); setEditingBoardName(true) }
+  const saveBoardName = () => {
+    if (editBoardNameValue.trim() && activeBoard && editBoardNameValue !== activeBoard.name) {
+      apiFetch(`/boards/${activeBoard.id}/`, { method: 'PUT', body: JSON.stringify({ name: editBoardNameValue }) })
+        .then(r => { if (!r.ok) throw new Error(); fetchBoards(); showNotification('Quadro renomeado!') })
+        .catch(() => showError('Erro ao renomear quadro'))
+    }
+    setEditingBoardName(false)
+  }
+
+  // Toggle concluido
+  const toggleCardComplete = useCallback((e, cardId) => {
+    e.stopPropagation()
+    apiFetch(`/cards/${cardId}/toggle-complete/`, { method: 'PATCH' })
+      .then(r => { if (!r.ok) throw new Error(); return r.json() })
+      .then(() => fetchBoards())
+      .catch(() => showError('Erro ao atualizar status'))
+  }, [fetchBoards, showError])
+
   const urlBoardId = searchParams.get('id')
   useEffect(() => {
     if (boards.length === 0) return
@@ -93,8 +117,10 @@ export default function Board() {
     return activeBoard.stages.map(stage => {
       let cards = stage.cards.filter(card => {
         if (activeFilter === 'all') return true
-        if (activeFilter === 'completed') return stage.id === lastId
-        if (activeFilter === 'delayed') return isOverdue(card.due_date) && stage.id !== lastId
+        // Concluido = is_completed OU ultima etapa
+        if (activeFilter === 'completed') return card.is_completed || stage.id === lastId
+        // Atrasado = tem data vencida E NAO esta concluido
+        if (activeFilter === 'delayed') return isOverdue(card.due_date) && !card.is_completed && stage.id !== lastId
         return true
       })
       const mode = getSortMode(stage.id)
@@ -120,6 +146,7 @@ export default function Board() {
     return stages
   }, [filteredStages, draggingType, draggedStageId, dragOverStageId])
 
+  // Background
   const wpUrl = currentUser?.company?.wallpaper_url
   const isWp = savedBg === 'wallpaper' && wpUrl
   const bgClass = isWp ? '' : ((BG_MAP[savedBg] || BG_MAP.default)[isDarkMode ? 'dark' : 'light'])
@@ -134,81 +161,60 @@ export default function Board() {
 
   if (loading && boards.length === 0) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-slate-900">Carregando...</div>
 
+  // Metricas — is_completed NAO conta como atrasado
   const lastStageId = activeBoard?.stages.length > 0 ? activeBoard.stages[activeBoard.stages.length - 1].id : null
   const totalInBoard = activeBoard?.stages.reduce((a, s) => a + s.cards.length, 0) || 0
-  const doneInBoard = lastStageId ? activeBoard.stages.filter(s => s.id === lastStageId).reduce((a, s) => a + s.cards.length, 0) : 0
-  const lateInBoard = activeBoard?.stages.filter(s => s.id !== lastStageId).reduce((a, s) => a + s.cards.filter(c => isOverdue(c.due_date)).length, 0) || 0
+  const doneInBoard = activeBoard?.stages.reduce((a, s) => a + s.cards.filter(c => c.is_completed || s.id === lastStageId).length, 0) || 0
+  const lateInBoard = activeBoard?.stages.filter(s => s.id !== lastStageId).reduce((a, s) => a + s.cards.filter(c => isOverdue(c.due_date) && !c.is_completed).length, 0) || 0
 
-  // ---- MINI CARD COMPONENT ----
+  // ---- MINI CARD ----
   const MiniCard = ({ card }) => {
     const result = parseFloat(card.estimated_value || 0) - parseFloat(card.invested_value || 0)
     const hasFinancial = card.estimated_value || card.invested_value
+    const completed = card.is_completed
+    const overdue = !completed && isOverdue(card.due_date)
+
     return (
       <div
         draggable
         onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('type', 'card'); e.dataTransfer.setData('card_id', card.id); setIsDragging(true); setDraggingType('card') }}
         onDragEnd={cleanupDrag}
         onClick={() => openModal(card.id)}
-        className={`card-hover p-3 rounded-lg border cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md group animate-fade-in transition-colors ${isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-200'}`}
+        className={`card-hover p-3 rounded-lg border cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md group animate-fade-in transition-all ${completed ? (isDarkMode ? 'bg-slate-700/50 border-emerald-800/50' : 'bg-emerald-50/50 border-emerald-200') : (isDarkMode ? 'bg-slate-700 border-slate-600' : 'bg-white border-slate-200')}`}
       >
-        {/* Titulo + prioridade */}
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <p className={`font-semibold text-sm leading-snug group-hover:text-blue-500 flex-1 ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>{card.title}</p>
+        {/* Titulo + prioridade + toggle concluido */}
+        <div className="flex items-start gap-2 mb-2">
+          <button
+            onClick={(e) => toggleCardComplete(e, card.id)}
+            className={`mt-0.5 shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${completed ? 'bg-emerald-500 border-emerald-500 text-white' : (isDarkMode ? 'border-slate-500 hover:border-emerald-500' : 'border-slate-300 hover:border-emerald-500')}`}
+            title={completed ? 'Reabrir card' : 'Marcar como concluido'}
+          >
+            {completed && <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>}
+          </button>
+          <p className={`font-semibold text-sm leading-snug group-hover:text-blue-500 flex-1 ${completed ? 'line-through opacity-60' : ''} ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>{card.title}</p>
           <div className="shrink-0 flex items-center gap-1">
             {card.priority === 'high' && <IconPrioHigh />}
             {card.priority === 'low' && <IconPrioLow />}
           </div>
         </div>
 
-        {/* Tags com NOME bem visivel */}
+        {/* Tags com nome */}
         {card.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-2.5">
             {card.tags.slice(0, 4).map(t => (
-              <span
-                key={t.id}
-                className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold text-white leading-none whitespace-nowrap"
-                style={{ backgroundColor: t.color }}
-              >
-                {t.name || 'Sem nome'}
-              </span>
+              <span key={t.id} className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold text-white leading-none whitespace-nowrap" style={{ backgroundColor: t.color }}>{t.name || 'Sem nome'}</span>
             ))}
-            {card.tags.length > 4 && (
-              <span className={`text-[10px] font-bold self-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>+{card.tags.length - 4}</span>
-            )}
+            {card.tags.length > 4 && <span className={`text-[10px] font-bold self-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>+{card.tags.length - 4}</span>}
           </div>
         )}
 
-        {/* Metadados: data, checklist, financeiro, pagamento, responsavel */}
-        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-          {card.due_date && (
-            <span className={`flex items-center gap-1 ${isOverdue(card.due_date) ? 'text-red-500' : ''}`}>
-              <IconCalendar /> {formatDate(card.due_date)}
-            </span>
-          )}
-          {card.payment_date && (
-            <span className="flex items-center gap-1 text-green-500">
-              <IconDollar className="w-3 h-3" /> {formatDate(card.payment_date)}
-            </span>
-          )}
-          {card.checklist_count > 0 && (
-            <span className="flex items-center gap-1">
-              <IconCheck /> {card.checklist_done}/{card.checklist_count}
-            </span>
-          )}
-          {hasFinancial && (
-            <span className={`font-bold ${result < 0 ? 'text-red-500' : 'text-green-500'}`}>
-              {formatCurrency(result)}
-            </span>
-          )}
-          {card.assignee && (
-            <div
-              className="ml-auto h-5 w-5 rounded-full flex items-center justify-center text-[8px] text-white font-bold"
-              style={{ backgroundColor: getColorFromString(card.assignee.username) }}
-              title={card.assignee.first_name || card.assignee.username}
-            >
-              {getInitials(card.assignee.first_name, card.assignee.last_name, card.assignee.username) || card.assignee.username.substring(0, 2).toUpperCase()}
-            </div>
-          )}
+        {/* Metadados */}
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[10px] font-semibold ${completed ? 'opacity-50' : ''} ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          {card.due_date && <span className={`flex items-center gap-1 ${overdue ? 'text-red-500' : ''}`}><IconCalendar /> {formatDate(card.due_date)}</span>}
+          {card.payment_date && <span className="flex items-center gap-1 text-green-500"><IconDollar className="w-3 h-3" /> {formatDate(card.payment_date)}</span>}
+          {card.checklist_count > 0 && <span className="flex items-center gap-1"><IconCheck /> {card.checklist_done}/{card.checklist_count}</span>}
+          {hasFinancial && <span className={`font-bold ${result < 0 ? 'text-red-500' : 'text-green-500'}`}>{formatCurrency(result)}</span>}
+          {card.assignee && <div className="ml-auto h-5 w-5 rounded-full flex items-center justify-center text-[8px] text-white font-bold" style={{ backgroundColor: getColorFromString(card.assignee.username) }} title={card.assignee.first_name || card.assignee.username}>{getInitials(card.assignee.first_name, card.assignee.last_name, card.assignee.username) || card.assignee.username.substring(0, 2).toUpperCase()}</div>}
         </div>
       </div>
     )
@@ -229,8 +235,23 @@ export default function Board() {
       {activeBoard && (
         <div className="mb-12 animate-fade-in">
           <div className="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            {/* Nome do quadro editavel */}
             <div>
-              <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{activeBoard.name}</h2>
+              {editingBoardName ? (
+                <input
+                  type="text" autoFocus
+                  value={editBoardNameValue}
+                  onChange={e => setEditBoardNameValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveBoardName(); if (e.key === 'Escape') setEditingBoardName(false) }}
+                  onBlur={saveBoardName}
+                  className={`text-2xl font-bold p-1 rounded border-2 focus:outline-none focus:ring-0 w-full max-w-md ${isDarkMode ? 'bg-slate-800 border-blue-500 text-white' : 'bg-white border-blue-500 text-slate-800'}`}
+                />
+              ) : (
+                <div className="flex items-center gap-3 group/title">
+                  <h2 className={`text-2xl font-bold cursor-text ${isDarkMode ? 'text-white' : 'text-slate-800'}`} onDoubleClick={startEditBoardName}>{activeBoard.name}</h2>
+                  <button onClick={startEditBoardName} className="opacity-0 group-hover/title:opacity-100 transition-opacity text-slate-400 hover:text-blue-500"><IconPencil className="w-4 h-4" /></button>
+                </div>
+              )}
               <div className="h-1 w-16 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full mt-2" />
             </div>
             <button onClick={() => deleteBoard(activeBoard.id)} className={`px-3 py-1.5 rounded-lg font-semibold text-xs border transition-all hover:scale-105 flex items-center gap-1.5 ${isDarkMode ? 'bg-red-900/20 border-red-800 text-red-500 hover:bg-red-900/40' : 'bg-red-50 border-red-200 text-red-600 hover:bg-red-100'}`}><IconTrash /> Excluir Quadro</button>
@@ -256,20 +277,22 @@ export default function Board() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead className={`text-xs uppercase tracking-wider ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
-                    <tr><th className="p-4 font-bold">Titulo</th><th className="p-4 font-bold">Etapa</th><th className="p-4 font-bold">Tags</th><th className="p-4 font-bold">Prazo</th><th className="p-4 font-bold">Pagamento</th><th className="p-4 font-bold">Resultado</th><th className="p-4 font-bold text-right">Acoes</th></tr>
+                    <tr><th className="p-4 font-bold w-8"></th><th className="p-4 font-bold">Titulo</th><th className="p-4 font-bold">Etapa</th><th className="p-4 font-bold">Tags</th><th className="p-4 font-bold">Prazo</th><th className="p-4 font-bold">Pagamento</th><th className="p-4 font-bold">Resultado</th><th className="p-4 font-bold text-right">Acoes</th></tr>
                   </thead>
                   <tbody className={`divide-y ${isDarkMode ? 'divide-slate-700 text-slate-200' : 'divide-slate-100 text-slate-700'}`}>
                     {displayStages.flatMap(s => s.cards.map(c => ({...c, stageName: s.name}))).length === 0 ? (
-                      <tr><td colSpan="7" className="p-8 text-center italic opacity-50">Nenhum card neste filtro.</td></tr>
+                      <tr><td colSpan="8" className="p-8 text-center italic opacity-50">Nenhum card neste filtro.</td></tr>
                     ) : displayStages.flatMap(s => s.cards.map(c => ({...c, stageName: s.name}))).map(card => {
                       const result = parseFloat(card.estimated_value||0) - parseFloat(card.invested_value||0)
                       const hasF = card.estimated_value || card.invested_value
+                      const overdue = !card.is_completed && isOverdue(card.due_date)
                       return (
-                        <tr key={card.id} onClick={() => openModal(card.id)} className={`transition-colors cursor-pointer group ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
-                          <td className="p-4 font-semibold text-sm group-hover:text-blue-500"><div className="flex items-center gap-2">{card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}{card.title}</div></td>
+                        <tr key={card.id} onClick={() => openModal(card.id)} className={`transition-colors cursor-pointer group ${card.is_completed ? 'opacity-60' : ''} ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'}`}>
+                          <td className="p-4"><button onClick={(e) => toggleCardComplete(e, card.id)} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${card.is_completed ? 'bg-emerald-500 border-emerald-500 text-white' : (isDarkMode ? 'border-slate-500 hover:border-emerald-500' : 'border-slate-300 hover:border-emerald-500')}`}>{card.is_completed && <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>}</button></td>
+                          <td className="p-4 font-semibold text-sm group-hover:text-blue-500"><div className={`flex items-center gap-2 ${card.is_completed?'line-through':''}`}>{card.priority==='high'&&<IconPrioHigh/>}{card.priority==='low'&&<IconPrioLow/>}{card.title}</div></td>
                           <td className="p-4"><span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${isDarkMode?'bg-slate-900 text-blue-400':'bg-blue-50 text-blue-600'}`}>{card.stageName}</span></td>
                           <td className="p-4"><div className="flex flex-wrap gap-1">{card.tags?.slice(0,3).map(t=><span key={t.id} className="inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold text-white" style={{backgroundColor:t.color}}>{t.name||'?'}</span>)}</div></td>
-                          <td className={`p-4 text-sm ${isOverdue(card.due_date)?'text-red-500':''}`}>{card.due_date?formatDate(card.due_date):'-'}</td>
+                          <td className={`p-4 text-sm ${overdue?'text-red-500':''}`}>{card.due_date?formatDate(card.due_date):'-'}</td>
                           <td className="p-4 text-sm text-green-500">{card.payment_date?formatDate(card.payment_date):'-'}</td>
                           <td className="p-4 text-sm font-bold">{hasF?<span className={result<0?'text-red-500':'text-green-500'}>{formatCurrency(result)}</span>:'-'}</td>
                           <td className="p-4 text-right"><button onClick={e=>{e.stopPropagation();deleteCard(card.id)}} className="p-2 text-slate-400 hover:text-red-500 rounded-lg"><IconTrash/></button></td>
@@ -291,7 +314,6 @@ export default function Board() {
                   className={`rounded-xl p-3 min-w-[280px] w-[280px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-180px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
                 >
                   <div className={`transition-opacity duration-200 flex flex-col h-full ${draggedStageId===stage.id?'opacity-0':'opacity-100'}`}>
-                    {/* Header da coluna */}
                     <div className="mb-3 flex items-center justify-between group/header">
                       {editingStageId===stage.id?(
                         <input type="text" autoFocus value={editStageName} onChange={e=>setEditStageName(e.target.value)} onKeyDown={e=>e.key==='Enter'&&saveStageEdit(stage.id)} onBlur={()=>saveStageEdit(stage.id)} className={`w-full p-1 rounded border focus:outline-none focus:ring-2 focus:ring-blue-400 font-bold uppercase text-xs tracking-widest ${isDarkMode?'bg-slate-900 border-slate-600 text-white':'bg-white border-blue-300 text-slate-800'}`}/>
@@ -322,7 +344,6 @@ export default function Board() {
                       </div>
                     </div>
 
-                    {/* Cards */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2.5 pb-2 pr-1 min-h-[50px]">
                       {stage.cards?.length > 0
                         ? stage.cards.map(card => <MiniCard key={card.id} card={card} />)
