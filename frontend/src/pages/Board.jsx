@@ -103,6 +103,17 @@ export default function Board() {
     if (!activeBoardId || !boards.find(b => b.id === activeBoardId)) setActiveBoardId(boards[0].id)
   }, [boards, urlBoardId])
 
+  // Abre card direto pela URL (vindo da busca global)
+  const urlCardId = searchParams.get('card')
+  useEffect(() => {
+    if (urlCardId && boards.length > 0) {
+      openModal(urlCardId)
+      const p = new URLSearchParams(searchParams)
+      p.delete('card')
+      setSearchParams(p, { replace: true })
+    }
+  }, [urlCardId, boards])
+
   const activeBoard = boards.find(b => b.id === activeBoardId) ?? null
 
   const submitNewBoard = () => {
