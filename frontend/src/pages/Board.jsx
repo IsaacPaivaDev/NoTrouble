@@ -90,7 +90,7 @@ export default function Board() {
   // Toggle concluido
   const toggleCardComplete = useCallback((e, cardId) => {
     e.stopPropagation()
-    apiFetch(`/cards/${cardId}/toggle-complete/`, { method: 'PATCH' })
+    apiFetch(`/cards/${cardId}/toggle-complete/`, { method: 'POST' })
       .then(r => { if (!r.ok) throw new Error(); return r.json() })
       .then(() => fetchBoards())
       .catch(() => showError('Erro ao atualizar status'))

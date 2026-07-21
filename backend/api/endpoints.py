@@ -9,8 +9,6 @@ from django.shortcuts import get_object_or_404
 from django.contrib.auth.hashers import make_password
 from django.core.mail import send_mail
 from django.conf import settings
-from django.utils import timezone
-from django.db.models import Count, Q, Prefetch
 
 from ninja import NinjaAPI, Schema, File
 from ninja.files import UploadedFile
@@ -115,7 +113,6 @@ class CompanyOutSchema(Schema):
     id: uuid.UUID
     name: str
     theme_hex: str
-    max_users: int = 2
     wallpaper_url: Optional[str] = None
 
     @staticmethod
@@ -222,6 +219,7 @@ class CardOutSchema(Schema):
     invested_value: Optional[Decimal] = None
     payment_method: Optional[str] = None
     payment_date: Optional[date] = None       # novo campo
+    is_completed: bool = False
     checklist_count: int = 0
     checklist_done: int = 0
 
@@ -246,6 +244,7 @@ class CardUpdateSchema(Schema):
     payment_method: Optional[str] = None
     payment_date: Optional[date] = None       # novo
     assignee_id: Optional[int] = None
+    is_completed: Optional[bool] = None
 
 
 class CardDetailSchema(Schema):
@@ -260,6 +259,7 @@ class CardDetailSchema(Schema):
     invested_value: Optional[Decimal] = None
     payment_method: Optional[str] = None
     payment_date: Optional[date] = None       # novo
+    is_completed: bool = False
     tags: List[TagSchema] = []
     assignee: Optional[UserSchema] = None
     checklist: List[ChecklistItemSchema] = []
@@ -298,6 +298,10 @@ class BoardSchema(Schema):
 class BoardCreateSchema(Schema):
     name: str
     stages: List[str] = ["A Fazer", "Em Andamento", "Concluido"]
+
+
+class BoardUpdateSchema(Schema):
+    name: str
 
 
 class BoardHealthSchema(Schema):
@@ -641,14 +645,31 @@ def create_board(request, payload: BoardCreateSchema):
 @api.get("/boards/", response=List[BoardSchema])
 def list_boards(request):
     user = request.auth
+    boards = Board.objects.filter(company=user.company).prefetch_related(
+        'stages', 'stages__cards', 'stages__cards__tags',
+        'stages__cards__assignee', 'stages__cards__checklist',
+    ).all()
+    for board in boards:
+        for stage in board.stages.all():
+            for card in stage.cards.all():
+                card.checklist_count = card.checklist.count()
+                card.checklist_done = card.checklist.filter(is_done=True).count()
+    return boards
+
+
+@api.put("/boards/{board_id}/", response=BoardSchema)
+def update_board(request, board_id: uuid.UUID, payload: BoardUpdateSchema):
+    board = get_board_for_user(request.auth, board_id)
+    board.name = payload.name
+    board.save()
+    AnalyticsEngine.log_activity(request.auth, 'UPDATED', f"renomeou o quadro para '{payload.name}'", board=board)
     annotated_cards = Card.objects.select_related('assignee').prefetch_related('tags').annotate(
         checklist_count=Count('checklist'),
         checklist_done=Count('checklist', filter=Q(checklist__is_done=True)),
     )
-    return Board.objects.filter(company=user.company).prefetch_related(
-        Prefetch('stages__cards', queryset=annotated_cards),
-        'stages',
-    ).all()
+    return Board.objects.prefetch_related(
+        Prefetch('stages__cards', queryset=annotated_cards), 'stages',
+    ).get(id=board.id)
 
 
 @api.delete("/boards/{board_id}/")
@@ -758,6 +779,10 @@ def update_card(request, card_id: uuid.UUID, payload: CardUpdateSchema):
     # assignee_id: None ou inteiro. Sempre atualiza (permite desatribuir).
     card.assignee_id = payload.assignee_id
 
+    if payload.is_completed is not None:
+        card.is_completed = payload.is_completed
+        card.completed_at = timezone.now() if payload.is_completed else None
+
     card.save()
     ActivityLog.objects.create(
         company=request.auth.company, user=request.auth, board=card.stage.board, card=card,
@@ -779,6 +804,7 @@ class CardPatchSchema(Schema):
     payment_method: Optional[str] = None
     payment_date: Optional[date] = None
     assignee_id: Optional[int] = None
+    is_completed: Optional[bool] = None
 
 
 @api.patch("/cards/{card_id}/", response=CardDetailSchema)
@@ -787,8 +813,21 @@ def patch_card(request, card_id: uuid.UUID, payload: CardPatchSchema):
     data = payload.dict(exclude_unset=True)
     for field, value in data.items():
         setattr(card, field, value)
+    if 'is_completed' in data:
+        card.completed_at = timezone.now() if data['is_completed'] else None
     card.save()
     return card
+
+
+@api.post("/cards/{card_id}/toggle-complete/")
+def toggle_card_complete(request, card_id: uuid.UUID):
+    card = get_card_for_user(request.auth, card_id)
+    card.is_completed = not card.is_completed
+    card.completed_at = timezone.now() if card.is_completed else None
+    card.save()
+    desc = f"marcou '{card.title}' como {'concluido' if card.is_completed else 'em andamento'}"
+    AnalyticsEngine.log_activity(request.auth, 'COMPLETED' if card.is_completed else 'UPDATED', desc, card=card)
+    return {"success": True, "is_completed": card.is_completed}
 
 
 @api.delete("/cards/{card_id}/")
