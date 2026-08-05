@@ -321,7 +321,7 @@ export default function Board() {
                   onDragStart={e=>{if(draggingType==='card')return;e.dataTransfer.setData('type','stage');e.dataTransfer.setData('stage_id',stage.id);setDraggingType('stage');setTimeout(()=>setDraggedStageId(stage.id),0)}}
                   onDragOver={e=>{e.preventDefault();if(draggingType==='stage'&&draggedStageId!==stage.id)setDragOverStageId(stage.id)}}
                   onDragEnd={()=>{if(draggingType==='stage'&&draggedStageId&&dragOverStageId&&draggedStageId!==dragOverStageId)reorderStages(activeBoard.id,displayStages.map(s=>s.id));cleanupDrag()}}
-                  onDrop={e=>{e.preventDefault();e.stopPropagation();const t=e.dataTransfer.getData('type')||draggingType;if(t==='card'){const cid=e.dataTransfer.getData('card_id');if(cid)moveCard(cid,stage.id)};cleanupDrag()}}
+                  onDrop={e=>{e.preventDefault();e.stopPropagation();const t=e.dataTransfer.getData('type')||draggingType;if(t==='card'){const cid=e.dataTransfer.getData('card_id');if(cid)moveCard(cid,stage.id);cleanupDrag()}}}
                   className={`rounded-xl p-3 min-w-[280px] w-[280px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-180px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
                 >
                   <div className={`transition-opacity duration-200 flex flex-col h-full ${draggedStageId===stage.id?'opacity-0':'opacity-100'}`}>
