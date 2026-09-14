@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useBoards } from '../hooks/useBoards'
+import { apiFetch } from '../api/client'
 import PageLayout from '../components/PageLayout'
 import { isOverdue } from '../utils/dates'
-import { IconChevron } from '../utils/icons'
+import { IconChevron, IconPlus, IconX } from '../utils/icons'
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab']
 const MONTHS = ['Janeiro', 'Fevereiro', 'Marco', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
@@ -14,17 +15,49 @@ export default function Calendar() {
   const { isDarkMode } = useTheme()
   const showNotification = useCallback((msg) => console.log(msg), [])
   const showError = useCallback((msg) => console.error(msg), [])
-  const { boards, currentUser, loading } = useBoards(showError, showNotification)
+  const { boards, currentUser, loading, fetchBoards } = useBoards(showError, showNotification)
 
   const today = new Date()
   const [currentMonth, setCurrentMonth] = useState(today.getMonth())
   const [currentYear, setCurrentYear] = useState(today.getFullYear())
 
+  // Form de criacao de card
+  const [creatingOn, setCreatingOn] = useState(null) // dateString do dia clicado
+  const [newTitle, setNewTitle] = useState('')
+  const [selectedBoardId, setSelectedBoardId] = useState('')
+  const [selectedStageId, setSelectedStageId] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const titleInputRef = useRef(null)
+
   const prevMonth = () => { if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(y => y - 1) } else setCurrentMonth(m => m - 1) }
   const nextMonth = () => { if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(y => y + 1) } else setCurrentMonth(m => m + 1) }
   const goToday = () => { setCurrentMonth(today.getMonth()); setCurrentYear(today.getFullYear()) }
 
-  // Extrai todos os cards com due_date de todos os boards
+  // Stages do board selecionado
+  const selectedBoard = boards.find(b => b.id === selectedBoardId)
+  const availableStages = selectedBoard?.stages || []
+
+  // Auto-seleciona primeiro board/stage
+  useEffect(() => {
+    if (creatingOn && boards.length > 0 && !selectedBoardId) {
+      setSelectedBoardId(boards[0].id)
+      if (boards[0].stages?.length > 0) setSelectedStageId(boards[0].stages[0].id)
+    }
+  }, [creatingOn, boards])
+
+  useEffect(() => {
+    if (selectedBoardId) {
+      const b = boards.find(b => b.id === selectedBoardId)
+      if (b?.stages?.length > 0) setSelectedStageId(b.stages[0].id)
+    }
+  }, [selectedBoardId])
+
+  // Foca no input quando abre o form
+  useEffect(() => {
+    if (creatingOn) setTimeout(() => titleInputRef.current?.focus(), 100)
+  }, [creatingOn])
+
+  // Todos os cards com due_date
   const allCards = useMemo(() => {
     const cards = []
     boards.forEach(board => {
@@ -45,34 +78,27 @@ export default function Calendar() {
     return cards
   }, [boards])
 
-  // Gera os dias do mes
+  // Dias do mes
   const calendarDays = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1)
     const lastDay = new Date(currentYear, currentMonth + 1, 0)
     const startPad = firstDay.getDay()
     const days = []
 
-    // Dias do mes anterior (padding)
     const prevLastDay = new Date(currentYear, currentMonth, 0).getDate()
     for (let i = startPad - 1; i >= 0; i--) {
       days.push({ day: prevLastDay - i, inMonth: false, date: new Date(currentYear, currentMonth - 1, prevLastDay - i) })
     }
-
-    // Dias do mes atual
     for (let d = 1; d <= lastDay.getDate(); d++) {
       days.push({ day: d, inMonth: true, date: new Date(currentYear, currentMonth, d) })
     }
-
-    // Padding final
     const remaining = 42 - days.length
     for (let i = 1; i <= remaining; i++) {
       days.push({ day: i, inMonth: false, date: new Date(currentYear, currentMonth + 1, i) })
     }
-
     return days
   }, [currentMonth, currentYear])
 
-  // Cards por dia
   const getCardsForDay = (date) => {
     return allCards.filter(c =>
       c.dateObj.getDate() === date.getDate() &&
@@ -86,7 +112,44 @@ export default function Calendar() {
     date.getMonth() === today.getMonth() &&
     date.getFullYear() === today.getFullYear()
 
+  const toDateStr = (date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
+
   const goToCard = (card) => navigate(`/board?id=${card.boardId}&card=${card.id}`)
+
+  // Abre form de criacao no dia clicado
+  const startCreating = (date) => {
+    setCreatingOn(toDateStr(date))
+    setNewTitle('')
+    setSelectedBoardId(boards.length > 0 ? boards[0].id : '')
+  }
+
+  const cancelCreating = () => { setCreatingOn(null); setNewTitle('') }
+
+  // Cria o card com due_date pre-preenchida
+  const handleCreateCard = async () => {
+    if (!newTitle.trim() || !selectedStageId) return
+    setIsSaving(true)
+    try {
+      // Cria o card
+      const res = await apiFetch('/cards/', { method: 'POST', body: JSON.stringify({ title: newTitle, stage_id: selectedStageId }) })
+      if (!res.ok) throw new Error()
+      const card = await res.json()
+
+      // Seta a due_date
+      const dueDate = new Date(creatingOn + 'T12:00:00')
+      await apiFetch(`/cards/${card.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ due_date: dueDate.toISOString() })
+      })
+
+      cancelCreating()
+      fetchBoards()
+    } catch {
+      showError('Erro ao criar card')
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-slate-900">Carregando...</div>
 
@@ -99,7 +162,7 @@ export default function Calendar() {
           <div>
             <h2 className={`text-3xl font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Calendario</h2>
             <div className="h-1 w-20 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full mt-2" />
-            <p className={`mt-2 text-sm font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Veja os prazos e agendamentos dos seus cards.</p>
+            <p className={`mt-2 text-sm font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Clique em um dia para criar um card com prazo.</p>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={goToday} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>Hoje</button>
@@ -109,10 +172,10 @@ export default function Calendar() {
           </div>
         </div>
 
-        {/* Grid do calendario */}
+        {/* Grid */}
         <div className={`rounded-2xl border overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-white border-slate-200'}`}>
 
-          {/* Header dias da semana */}
+          {/* Dias da semana */}
           <div className={`grid grid-cols-7 border-b ${isDarkMode ? 'border-slate-700 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}>
             {WEEKDAYS.map(d => (
               <div key={d} className={`p-3 text-center text-xs font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{d}</div>
@@ -124,18 +187,70 @@ export default function Calendar() {
             {calendarDays.map((dayInfo, i) => {
               const dayCards = getCardsForDay(dayInfo.date)
               const _isToday = isToday(dayInfo.date)
+              const dayStr = toDateStr(dayInfo.date)
+              const isCreatingHere = creatingOn === dayStr
+
               return (
                 <div
                   key={i}
-                  className={`min-h-[100px] md:min-h-[120px] p-1.5 border-b border-r transition-colors ${isDarkMode ? 'border-slate-700/50' : 'border-slate-100'} ${!dayInfo.inMonth ? (isDarkMode ? 'bg-slate-900/30' : 'bg-slate-50/50') : ''} ${_isToday ? (isDarkMode ? 'bg-blue-900/20' : 'bg-blue-50/50') : ''}`}
+                  className={`min-h-[110px] md:min-h-[130px] p-1.5 border-b border-r transition-colors relative group/day ${isDarkMode ? 'border-slate-700/50' : 'border-slate-100'} ${!dayInfo.inMonth ? (isDarkMode ? 'bg-slate-900/30' : 'bg-slate-50/50') : ''} ${_isToday ? (isDarkMode ? 'bg-blue-900/20' : 'bg-blue-50/50') : ''}`}
                 >
-                  {/* Numero do dia */}
-                  <div className={`text-right mb-1 ${!dayInfo.inMonth ? 'opacity-30' : ''}`}>
-                    <span className={`inline-flex items-center justify-center w-7 h-7 text-xs font-bold rounded-full ${_isToday ? 'bg-blue-600 text-white' : (isDarkMode ? 'text-slate-300' : 'text-slate-700')}`}>{dayInfo.day}</span>
+                  {/* Header do dia: numero + botao + */}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`inline-flex items-center justify-center w-7 h-7 text-xs font-bold rounded-full ${!dayInfo.inMonth ? 'opacity-30' : ''} ${_isToday ? 'bg-blue-600 text-white' : (isDarkMode ? 'text-slate-300' : 'text-slate-700')}`}>{dayInfo.day}</span>
+                    {dayInfo.inMonth && !isCreatingHere && (
+                      <button
+                        onClick={() => startCreating(dayInfo.date)}
+                        className={`w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover/day:opacity-100 transition-all ${isDarkMode ? 'bg-blue-600/30 text-blue-400 hover:bg-blue-600 hover:text-white' : 'bg-blue-100 text-blue-500 hover:bg-blue-500 hover:text-white'}`}
+                        title="Criar card neste dia"
+                      >
+                        <IconPlus className="w-3 h-3" />
+                      </button>
+                    )}
                   </div>
 
+                  {/* Form de criacao inline */}
+                  {isCreatingHere && (
+                    <div className={`absolute left-0 top-0 w-[280px] p-3 rounded-xl border shadow-2xl z-50 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>{dayInfo.day} {MONTHS[dayInfo.date.getMonth()]}</span>
+                        <button onClick={cancelCreating} className="text-slate-400 hover:text-red-500"><IconX className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <input
+                        ref={titleInputRef}
+                        type="text"
+                        value={newTitle}
+                        onChange={e => setNewTitle(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleCreateCard(); if (e.key === 'Escape') cancelCreating() }}
+                        placeholder="Titulo do card..."
+                        className={`w-full p-2 rounded-lg border text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-300 text-slate-800'}`}
+                      />
+                      <select
+                        value={selectedBoardId}
+                        onChange={e => setSelectedBoardId(e.target.value)}
+                        className={`w-full p-2 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${isDarkMode ? 'bg-slate-900 border-slate-600 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-700'}`}
+                      >
+                        {boards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                      <select
+                        value={selectedStageId}
+                        onChange={e => setSelectedStageId(e.target.value)}
+                        className={`w-full p-2 rounded-lg border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${isDarkMode ? 'bg-slate-900 border-slate-600 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-700'}`}
+                      >
+                        {availableStages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                      <button
+                        onClick={handleCreateCard}
+                        disabled={isSaving || !newTitle.trim()}
+                        className="w-full py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-40"
+                      >
+                        {isSaving ? 'Criando...' : 'Criar Card'}
+                      </button>
+                    </div>
+                  )}
+
                   {/* Cards do dia */}
-                  <div className="flex flex-col gap-1 overflow-y-auto max-h-[80px] custom-scrollbar" style={{ scrollbarWidth: 'thin' }}>
+                  <div className="flex flex-col gap-0.5 overflow-y-auto max-h-[80px]" style={{ scrollbarWidth: 'thin' }}>
                     {dayCards.slice(0, 3).map(card => {
                       const overdue = !card.is_completed && isOverdue(card.due_date)
                       const completed = card.is_completed
@@ -175,11 +290,6 @@ export default function Calendar() {
           ))}
         </div>
       </div>
-
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.3); border-radius: 4px; }
-      `}</style>
     </PageLayout>
   )
 }
