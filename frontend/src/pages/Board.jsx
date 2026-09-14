@@ -70,8 +70,8 @@ export default function Board() {
   const [newBoardName, setNewBoardName] = useState("")
   const [newBoardStages, setNewBoardStages] = useState(["A Fazer", "Em Andamento", "Concluido"])
 
-  const handleCreateNewCard = (stageId) => { if (!newCardTitle.trim()) { setAddingToStageId(null); return }; createCard(stageId, newCardTitle); setNewCardTitle(""); setAddingToStageId(null) }
-  const handleCreateNewStage = (boardId) => { if (!newStageName.trim()) { setAddingStageToBoardId(null); return }; createStage(boardId, newStageName); setNewStageName(""); setAddingStageToBoardId(null) }
+  const handleCreateNewCard = (stageId) => { if (!newCardTitle.trim()) { setAddingToStageId(null); return }; const title = newCardTitle; setNewCardTitle(""); setAddingToStageId(null); createCard(stageId, title) }
+  const handleCreateNewStage = (boardId) => { if (!newStageName.trim()) { setAddingStageToBoardId(null); return }; const name = newStageName; setNewStageName(""); setAddingStageToBoardId(null); createStage(boardId, name) }
   const saveStageEdit = (stageId) => { if (editStageName.trim()) { updateStage(stageId, editStageName) }; setEditingStageId(null) }
   const openModal = (cardId) => { setSelectedCardId(cardId); setIsModalOpen(true) }
   const cleanupDrag = useCallback(() => { setIsDragging(false); setDraggingType(null); setDraggedStageId(null); setDragOverStageId(null) }, [])
@@ -322,7 +322,7 @@ export default function Board() {
                   onDragOver={e=>{e.preventDefault();if(draggingType==='stage'&&draggedStageId!==stage.id)setDragOverStageId(stage.id)}}
                   onDragEnd={()=>{if(draggingType==='stage'&&draggedStageId&&dragOverStageId&&draggedStageId!==dragOverStageId)reorderStages(activeBoard.id,displayStages.map(s=>s.id));cleanupDrag()}}
                   onDrop={e=>{e.preventDefault();e.stopPropagation();const t=e.dataTransfer.getData('type')||draggingType;if(t==='card'){const cid=e.dataTransfer.getData('card_id');if(cid)moveCard(cid,stage.id);cleanupDrag()}}}
-                  className={`rounded-xl p-3 min-w-[280px] w-[280px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-180px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
+                  className={`rounded-xl p-3 min-w-[280px] w-[280px] shadow-sm border transition-all duration-300 cursor-grab active:cursor-grabbing flex flex-col max-h-[calc(100vh-260px)] ${draggedStageId===stage.id?(isDarkMode?'bg-slate-800/40 border-slate-600 border-dashed opacity-50 scale-95':'bg-slate-200/50 border-slate-400 border-dashed opacity-50 scale-95'):(isDarkMode?'bg-slate-800/80 border-slate-700':'bg-slate-100 border-slate-200')}`}
                 >
                   <div className={`transition-opacity duration-200 flex flex-col h-full ${draggedStageId===stage.id?'opacity-0':'opacity-100'}`}>
                     <div className="mb-3 flex items-center justify-between group/header">

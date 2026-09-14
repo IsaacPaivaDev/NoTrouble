@@ -32,8 +32,18 @@ class ActivityLog(models.Model):
 
 
 class Company(models.Model):
+    COMPANY_TYPE_CHOICES = (
+        ('contabil', 'Contabilidade'),
+        ('vistos', 'Assessoria de Vistos'),
+        ('tech', 'Tecnologia'),
+        ('juridico', 'Juridico'),
+        ('consultoria', 'Consultoria'),
+        ('outro', 'Outro'),
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
+    company_type = models.CharField(max_length=30, choices=COMPANY_TYPE_CHOICES, default='outro')
     theme_hex = models.CharField(max_length=7, default="#3B82F6")
     wallpaper = models.ImageField(upload_to='wallpapers/', null=True, blank=True)
     max_users = models.IntegerField(default=2)
@@ -50,13 +60,35 @@ class User(AbstractUser):
         ('MANAGER', 'Gerente de Projeto'),
         ('MEMBER', 'Membro da Equipe')
     )
+    SECTOR_CHOICES = (
+        ('geral', 'Geral'),
+        ('fiscal', 'Fiscal'),
+        ('pessoal', 'Departamento Pessoal'),
+        ('contabil', 'Contabil'),
+        ('financeiro', 'Financeiro'),
+        ('ti', 'Tecnologia'),
+        ('comercial', 'Comercial'),
+        ('juridico', 'Juridico'),
+        ('administrativo', 'Administrativo'),
+    )
+
     company = models.ForeignKey('Company', on_delete=models.CASCADE, null=True, blank=True, related_name='users')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='ADMIN')
+    sector = models.CharField(max_length=30, choices=SECTOR_CHOICES, default='geral')
     avatar = models.ImageField(upload_to='avatars/', null=True, blank=True)
+
+    # Permissoes sandbox — admin configura no painel
+    can_view_all_cards = models.BooleanField(default=False)
+    can_view_financials = models.BooleanField(default=False)
+    can_view_reports = models.BooleanField(default=False)
+    can_manage_team = models.BooleanField(default=False)
 
     def __str__(self):
         company_name = self.company.name if self.company else "SuperAdmin"
         return f"{self.username} ({self.get_role_display()} em {company_name})"
+
+    def has_full_access(self):
+        return self.role == 'ADMIN'
 
 
 class VerificationCode(models.Model):
@@ -122,7 +154,7 @@ class Card(models.Model):
     payment_method = models.CharField(max_length=100, blank=True, null=True)
     payment_date = models.DateField(null=True, blank=True)
 
-    # Conclusao — quando True, o card para de contar como atrasado
+    # Conclusao
     is_completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)
 
