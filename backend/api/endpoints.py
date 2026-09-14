@@ -115,6 +115,7 @@ class CompanyOutSchema(Schema):
     id: uuid.UUID
     name: str
     theme_hex: str
+    max_users: int = 2
     wallpaper_url: Optional[str] = None
 
     @staticmethod
