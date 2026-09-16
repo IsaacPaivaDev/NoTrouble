@@ -5,6 +5,7 @@ import ProtectedRoute, { GuestOnlyRoute } from './components/ProtectedRoute'
 
 import Login from './pages/Login'
 import Board from './pages/Board'
+import Painel from './pages/Painel'
 import Register from './pages/Register'
 import Verify from './pages/Verify'
 import Dashboard from './pages/Dashboard'
@@ -31,6 +32,7 @@ function App() {
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/board" element={<Board />} />
+              <Route path="/painel" element={<Painel />} />
               <Route path="/data" element={<Data />} />
               <Route path="/calendar" element={<Calendar />} />
               <Route path="/team" element={<Team />} />

@@ -11,10 +11,12 @@ import {
 
 const IconSearch = ({className="w-4 h-4"}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
 const IconCalendarNav = ({className="w-5 h-5"}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+const IconPainel = ({className="w-5 h-5"}) => <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 20h18M7 20V10m5 10V4m5 16v-7"/></svg>
 
 const NAV_ITEMS = [
   { path: '/',         label: 'Inicio',         Icon: IconHome },
   { path: '/board',    label: 'Quadros',         Icon: IconBoard, hasBoards: true },
+  { path: '/painel',   label: 'Painel',          Icon: IconPainel, requerPainel: true },
   { path: '/calendar', label: 'Calendario',      Icon: IconCalendarNav },
   { path: '/data',     label: 'Relatorios',      Icon: IconChart },
   { path: '/team',     label: 'Equipe',          Icon: IconUsers },
@@ -97,7 +99,11 @@ export default function PageLayout({
         </div>
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="flex flex-col gap-1 px-4">
-            {NAV_ITEMS.map(({ path, label, Icon, hasBoards: hb }) => {
+            {NAV_ITEMS
+              // Gating de plano: quem nao tem acesso ao Painel nao ve o item.
+              // A regra vem de can_access_painel, calculado no backend (User.can_access_painel).
+              .filter(item => !item.requerPainel || currentUser?.can_access_painel)
+              .map(({ path, label, Icon, hasBoards: hb }) => {
               const active = isActive(path)
               if (hb && boards.length > 0) {
                 return (

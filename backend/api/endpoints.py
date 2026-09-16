@@ -48,50 +48,22 @@ api = NinjaAPI(title="Notrouble API", auth=JWTAuth())
 # Toda rota que recebe um ID de Card/Checklist/Comment/Attachment passa pela
 # empresa do usuario autenticado. Sem isso, qualquer usuario logado consegue
 # acessar dados de qualquer empresa se souber o UUID (defesa em profundidade).
+#
+# As definicoes moram em ownership.py desde o Painel de Roadmap: painel_api.py
+# precisa dos mesmos helpers, e manter a definicao aqui criaria import circular.
+# Sao as mesmas funcoes, com o mesmo comportamento, importadas para o namespace
+# deste modulo — nenhuma chamada abaixo precisou mudar.
 # =============================================================================
 
-def get_card_for_user(user, card_id):
-    return get_object_or_404(
-        Card,
-        id=card_id,
-        stage__board__company=user.company,
-    )
-
-
-def get_checklist_for_user(user, item_id):
-    return get_object_or_404(
-        ChecklistItem,
-        id=item_id,
-        card__stage__board__company=user.company,
-    )
-
-
-def get_comment_for_user(user, comment_id):
-    return get_object_or_404(
-        Comment,
-        id=comment_id,
-        card__stage__board__company=user.company,
-    )
-
-
-def get_attachment_for_user(user, attachment_id):
-    return get_object_or_404(
-        Attachment,
-        id=attachment_id,
-        card__stage__board__company=user.company,
-    )
-
-
-def get_stage_for_user(user, stage_id):
-    return get_object_or_404(
-        Stage,
-        id=stage_id,
-        board__company=user.company,
-    )
-
-
-def get_board_for_user(user, board_id):
-    return get_object_or_404(Board, id=board_id, company=user.company)
+from .ownership import (
+    get_card_for_user,
+    get_checklist_for_user,
+    get_comment_for_user,
+    get_attachment_for_user,
+    get_stage_for_user,
+    get_board_for_user,
+    get_frente_for_user,
+)
 
 
 # =============================================================================
@@ -135,6 +107,24 @@ class UserSchema(Schema):
     @staticmethod
     def resolve_avatar_url(obj):
         return obj.avatar.url if hasattr(obj, 'avatar') and obj.avatar else None
+
+
+class UserMeSchema(UserSchema):
+    """Usado SOMENTE em /users/me/.
+
+    Nao mexer no UserSchema: ele e reaproveitado como `assignee` dentro de
+    CardOutSchema e CardDetailSchema. Adicionar as permissoes la infla o payload
+    de todo card e expoe as permissoes de um usuario para os colegas.
+    """
+    can_view_all_cards: bool = False
+    can_view_financials: bool = False
+    can_view_reports: bool = False
+    can_manage_team: bool = False
+    can_access_painel: bool = False
+
+    @staticmethod
+    def resolve_can_access_painel(obj):
+        return obj.can_access_painel()
 
 
 class TagSchema(Schema):
@@ -412,7 +402,7 @@ def verify_code(request, payload: VerifySchema):
 # USUARIO
 # =============================================================================
 
-@api.get("/users/me/", response=UserSchema)
+@api.get("/users/me/", response=UserMeSchema)
 def get_current_user(request):
     return request.auth
 
@@ -1005,3 +995,16 @@ class DashboardMetricsSchema(Schema):
 def get_dashboard_metrics(request):
 
     return AnalyticsEngine.get_full_dashboard(request.auth)
+
+
+# =============================================================================
+# PAINEL DE ROADMAP
+#
+# Router separado (painel_api.py) para nao engordar mais este arquivo.
+# O registro fica no rodape porque e ponto de montagem, nao dependencia:
+# painel_api.py importa de ownership.py e models.py, nunca deste modulo.
+# =============================================================================
+
+from .painel_api import router as painel_router
+
+api.add_router("", painel_router)
