@@ -5,14 +5,16 @@ import { getInitials, getColorFromString } from '../utils/formatters'
 /**
  * Avatar com queda automatica para as iniciais.
  *
- * Existe por um motivo concreto: o backend nao serve /media/ em producao
- * (django.conf.urls.static.static() devolve lista vazia quando DEBUG=False) e o
- * disco do Render e efemero, entao arquivo enviado some no deploy seguinte. A
- * linha no banco continua apontando para um avatar que nao existe mais, e o
- * <img> mostrava o icone de imagem quebrada.
+ * Dois comportamentos que importam:
  *
- * Aqui, o onError troca para as iniciais coloridas. Quando o armazenamento for
- * para o Supabase Storage, este componente continua valendo sem mudanca.
+ * 1. CARREGANDO != SEM FOTO. Enquanto currentUser ainda e nulo (logo apos um
+ *    reload), nao ha nome nem username para montar inicial. Antes isso virava
+ *    um "?" piscando na tela. Agora vira um bloco neutro, sem letra nenhuma.
+ *
+ * 2. Se a imagem existe no banco mas nao carrega, o onError cai nas iniciais E
+ *    escreve no console o motivo provavel. O backend nao serve /media/ em
+ *    producao e o disco do Render e efemero, entao a linha no banco costuma
+ *    apontar para um arquivo que nao existe mais.
  */
 export default function Avatar({
   url, firstName, lastName, username, nome,
@@ -23,17 +25,41 @@ export default function Avatar({
   useEffect(() => { setFalhou(false) }, [url])
 
   const rotulo = nome || [firstName, lastName].filter(Boolean).join(' ') || username || ''
-  const mostrarImagem = url && !falhou
+  const temIdentidade = Boolean(rotulo)
+  const mostrarImagem = Boolean(url) && !falhou
 
   const iniciais = (() => {
     const pelaLib = getInitials(firstName, lastName, username)
     if (pelaLib) return pelaLib
     const partes = String(rotulo).trim().split(/\s+/).filter(Boolean)
-    if (!partes.length) return '?'
+    if (!partes.length) return ''
     return partes.length === 1
       ? partes[0].slice(0, 2).toUpperCase()
       : (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
   })()
+
+  const aoFalhar = () => {
+    const alvo = mediaUrl(url)
+    console.warn(
+      `[Avatar] a imagem nao carregou: ${alvo}\n` +
+      `O banco tem o caminho salvo, mas o arquivo nao foi servido. Causas provaveis:\n` +
+      `  1. o backend nao registra a rota /media/ em producao (DEBUG=False desliga o static())\n` +
+      `  2. o disco do Render foi recriado no ultimo deploy e o arquivo sumiu\n` +
+      `Veja o que existe no disco agora em: ${alvo.replace(/\/media\/.*$/, '/media-diag/')}`
+    )
+    setFalhou(true)
+  }
+
+  // Sem foto E sem identidade = ainda carregando. Placeholder neutro, sem "?".
+  if (!mostrarImagem && !temIdentidade) {
+    return (
+      <div
+        aria-hidden="true"
+        className={`${size} ${rounded} shrink-0 animate-pulse motion-reduce:animate-none ${className}`}
+        style={{ backgroundColor: 'rgb(100 116 139 / 0.25)' }}
+      />
+    )
+  }
 
   return (
     <div
@@ -42,7 +68,7 @@ export default function Avatar({
       style={{ backgroundColor: mostrarImagem ? 'transparent' : (getColorFromString(username || rotulo) || '#3B82F6') }}
     >
       {mostrarImagem
-        ? <img src={mediaUrl(url)} alt="" onError={() => setFalhou(true)} className="h-full w-full object-cover" />
+        ? <img src={mediaUrl(url)} alt="" onError={aoFalhar} className="h-full w-full object-cover" />
         : iniciais}
     </div>
   )
