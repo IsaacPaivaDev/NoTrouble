@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useTheme } from '../contexts/ThemeContext'
 import { useAuth } from '../contexts/AuthContext'
-import { mediaUrl } from '../utils/media'
-import { getInitials, getColorFromString } from '../utils/formatters'
+import AnimatedBackground from './AnimatedBackground'
+import Avatar from './Avatar'
 import {
   IconMenu, IconHome, IconBoard, IconChart, IconUsers,
   IconSettings, IconLogout, IconSun, IconMoon, IconPlus, IconX,
@@ -138,14 +138,16 @@ export default function PageLayout({
 
       {/* MAIN */}
       <div
-        className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-500 ${bgClass || defaultBg}`}
+        className={`flex-1 flex flex-col h-screen overflow-hidden relative transition-all duration-500 ${bgClass || defaultBg}`}
         style={{
           ...(bgStyle || {}),
           backgroundSize: bgStyle?.backgroundImage ? 'cover' : undefined,
           backgroundPosition: bgStyle?.backgroundImage ? 'center' : undefined,
         }}
       >
-        <header className={`px-6 py-4 flex items-center justify-between shadow-sm z-10 transition-colors ${isDarkMode ? 'bg-slate-800/90 backdrop-blur-md border-b border-slate-700' : 'bg-white/90 backdrop-blur-md'}`}>
+        <AnimatedBackground />
+
+        <header className={`relative px-6 py-4 flex items-center justify-between shadow-sm z-10 transition-colors ${isDarkMode ? 'bg-slate-800/90 backdrop-blur-md border-b border-slate-700' : 'bg-white/90 backdrop-blur-md'}`}>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}><IconMenu /></button>
             <h1 className={`text-lg md:text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'} flex items-center gap-3 tracking-tight`}>
@@ -197,14 +199,19 @@ export default function PageLayout({
             {headerActions}
             <button onClick={toggleTheme} className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}>{isDarkMode ? <IconSun /> : <IconMoon />}</button>
             {currentUser && (
-              <div className={`h-9 w-9 rounded-full shadow-md overflow-hidden flex items-center justify-center font-bold text-xs ${isDarkMode ? 'border border-slate-700 text-slate-100' : 'border border-slate-100 text-white'}`} style={{ backgroundColor: !currentUser.avatar_url ? (getColorFromString(currentUser.username) || '#3B82F6') : 'transparent' }} title={currentUser.first_name || currentUser.username}>
-                {currentUser.avatar_url ? <img src={mediaUrl(currentUser.avatar_url)} alt="" className="h-full w-full object-cover" /> : (getInitials(currentUser.first_name, currentUser.last_name, currentUser.username) || currentUser.username?.substring(0,2).toUpperCase() || 'U')}
-              </div>
+              <Avatar
+                url={currentUser.avatar_url}
+                firstName={currentUser.first_name}
+                lastName={currentUser.last_name}
+                username={currentUser.username}
+                textSize="text-xs"
+                className={`shadow-md ${isDarkMode ? 'border border-slate-700' : 'border border-slate-100'}`}
+              />
             )}
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto p-4 md:p-6 relative" onClick={() => { if(isSidebarOpen) setIsSidebarOpen(false) }}>
+        <main className="flex-1 overflow-auto p-4 md:p-6 relative z-10" onClick={() => { if(isSidebarOpen) setIsSidebarOpen(false) }}>
           {children}
         </main>
       </div>
