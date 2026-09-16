@@ -1,124 +1,143 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import { useTheme } from '../contexts/ThemeContext'
 
 /**
  * Camada de fundo animada. CSS puro — sem canvas, sem biblioteca.
  *
- * Tudo anima so `transform` e `opacity`, que a GPU resolve sem repintar layout.
- * A camada e `pointer-events-none` e fica atras do conteudo, entao nao rouba
- * clique nem foco de nada.
+ * NOTAS DE DESEMPENHO (a primeira versao engasgava; foi reescrita):
  *
- * `prefers-reduced-motion` para toda a animacao e deixa o fundo estatico: quem
- * tem sensibilidade a movimento usa o sistema o dia inteiro sem passar mal.
- * Isso vale para todos os modos, inclusive o brilho das estrelas.
+ * 1. Estrelas por `background-image` de radial-gradients em ladrilho, NAO por
+ *    box-shadow. Um span com 90 sombras espalhadas por 100vw/100vh tem area de
+ *    pintura do tamanho da tela; animar opacity nele repinta tudo a cada
+ *    quadro. O ladrilho e pintado UMA vez e repetido pela GPU.
+ *
+ * 2. A rolagem anda exatamente o tamanho do ladrilho, entao o loop e perfeito
+ *    em qualquer altura de janela — sem emenda visivel.
+ *
+ * 3. As manchas so transladam. A versao anterior tinha `scale()` junto com
+ *    `filter: blur(70px)`, o que obriga o navegador a re-rasterizar uma area
+ *    borrada enorme a cada quadro. Blur estatico + translate e so composicao.
+ *
+ * 4. `will-change` promove cada camada a layer propria: as animacoes rodam no
+ *    compositor, sem tocar em layout nem em paint.
+ *
+ * 5. A animacao para quando a aba sai de foco. Nao adianta gastar GPU (e
+ *    bateria de notebook) desenhando estrela que ninguem esta vendo.
+ *
+ * `prefers-reduced-motion` congela tudo e deixa o fundo estatico.
  */
 
 const aleatorio = (semente) => {
-  // PRNG simples e deterministico: o ceu nao muda de lugar a cada render.
-  let x = Math.sin(semente) * 10000
+  const x = Math.sin(semente) * 10000
   return x - Math.floor(x)
 }
 
-const campoDeEstrelas = (quantidade, deslocamento) => {
-  const pontos = []
+// Um ladrilho de estrelas como background-image. Pintado uma vez, repetido pela
+// GPU — e o que torna isso barato.
+const ladrilho = (quantidade, semente, lado) => {
+  const partes = []
   for (let i = 0; i < quantidade; i++) {
-    const x = (aleatorio(i + deslocamento) * 100).toFixed(2)
-    const y = (aleatorio(i + deslocamento + 0.5) * 100).toFixed(2)
-    pontos.push(`${x}vw ${y}vh`)
+    const x = (aleatorio(i + semente) * 100).toFixed(1)
+    const y = (aleatorio(i + semente + 0.5) * 100).toFixed(1)
+    const r = (0.6 + aleatorio(i + semente + 0.9) * 1.1).toFixed(2)
+    partes.push(`radial-gradient(${r}px ${r}px at ${x}% ${y}%, #fff 100%, transparent 100%)`)
   }
-  return pontos.join(', ')
+  return { imagem: partes.join(','), lado }
 }
 
 export default function AnimatedBackground() {
   const { background, isDarkMode } = useTheme()
+  const [visivel, setVisivel] = useState(true)
 
-  const ceus = useMemo(() => ({
-    perto: campoDeEstrelas(40, 1),
-    meio: campoDeEstrelas(60, 100),
-    longe: campoDeEstrelas(90, 200),
-  }), [])
+  useEffect(() => {
+    const aoTrocar = () => setVisivel(!document.hidden)
+    document.addEventListener('visibilitychange', aoTrocar)
+    return () => document.removeEventListener('visibilitychange', aoTrocar)
+  }, [])
+
+  const ceus = useMemo(() => [
+    { ...ladrilho(26, 1, 520), dur: 170, brilho: 11, alfa: 0.4 },
+    { ...ladrilho(20, 140, 700), dur: 110, brilho: 8, alfa: 0.65 },
+    { ...ladrilho(14, 320, 900), dur: 70, brilho: 5.5, alfa: 0.95 },
+  ], [])
 
   if (background === 'nenhum') return null
 
-  const op = isDarkMode ? 1 : 0.45   // no tema claro o fundo recua
+  const op = isDarkMode ? 1 : 0.4
+  const estado = visivel ? 'running' : 'paused'
 
   return (
     <div className="nt-bg pointer-events-none absolute inset-0 overflow-hidden z-0" aria-hidden="true">
       <style>{`
-        .nt-bg{--nt-ac:rgb(var(--ac-500,59 130 246));--nt-ac4:rgb(var(--ac-400,96 165 250));--nt-op:${op}}
-        @keyframes nt-flutua{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,-100vh,0)}}
-        @keyframes nt-brilha{0%,100%{opacity:.25}50%{opacity:1}}
-        @keyframes nt-desliza{0%{transform:translate3d(0,0,0) scale(1)}33%{transform:translate3d(6vw,-4vh,0) scale(1.15)}66%{transform:translate3d(-5vw,5vh,0) scale(.9)}100%{transform:translate3d(0,0,0) scale(1)}}
-        @keyframes nt-respira{0%,100%{transform:scale(1) rotate(0deg);opacity:.5}50%{transform:scale(1.25) rotate(8deg);opacity:.85}}
-        @keyframes nt-sobe{0%{transform:translate3d(0,10vh,0);opacity:0}15%{opacity:.9}85%{opacity:.7}100%{transform:translate3d(2vw,-100vh,0);opacity:0}}
+        .nt-bg{--nt-ac:rgb(var(--ac-500,59 130 246));--nt-ac4:rgb(var(--ac-400,96 165 250));--nt-op:${op};contain:strict}
+        @keyframes nt-rola{to{transform:translate3d(0,calc(-1 * var(--nt-lado)),0)}}
+        @keyframes nt-brilha{0%,100%{opacity:calc(var(--nt-alfa) * .45 * var(--nt-op))}50%{opacity:calc(var(--nt-alfa) * var(--nt-op))}}
+        @keyframes nt-vaga{0%{transform:translate3d(0,0,0);opacity:0}12%{opacity:.85}88%{opacity:.6}100%{transform:translate3d(2vw,-105vh,0);opacity:0}}
+        @keyframes nt-anda{0%{transform:translate3d(0,0,0)}25%{transform:translate3d(7vw,-5vh,0)}50%{transform:translate3d(2vw,6vh,0)}75%{transform:translate3d(-6vw,2vh,0)}100%{transform:translate3d(0,0,0)}}
 
-        .nt-camada{position:absolute;inset:0;will-change:transform}
-        .nt-estrela{position:absolute;top:0;left:0;border-radius:9999px;background:#fff}
-        .nt-borrao{position:absolute;border-radius:9999px;filter:blur(70px);will-change:transform,opacity}
+        .nt-ceu{position:absolute;left:0;top:0;width:100%;height:calc(100% + var(--nt-lado));
+                background-repeat:repeat;background-size:var(--nt-lado) var(--nt-lado);
+                will-change:transform,opacity;backface-visibility:hidden}
+        .nt-mancha{position:absolute;border-radius:9999px;will-change:transform;backface-visibility:hidden}
+        .nt-vaga{position:absolute;border-radius:9999px;will-change:transform,opacity}
 
-        @media (prefers-reduced-motion: reduce){
-          .nt-bg *{animation:none !important}
-        }
+        @media (prefers-reduced-motion: reduce){ .nt-bg *{animation:none !important} }
       `}</style>
 
-      {background === 'estrelas' && (
-        <>
-          {[
-            { campo: ceus.longe, tam: 1, dur: 150, brilho: 9, alfa: 0.45 },
-            { campo: ceus.meio, tam: 1.6, dur: 95, brilho: 6, alfa: 0.7 },
-            { campo: ceus.perto, tam: 2.4, dur: 60, brilho: 4, alfa: 1 },
-          ].map((c, i) => (
-            <div key={i} className="nt-camada" style={{ animation: `nt-flutua ${c.dur}s linear infinite`, opacity: `calc(${c.alfa} * var(--nt-op))` }}>
-              {[0, 1].map(j => (
-                <span key={j} className="nt-estrela"
-                      style={{
-                        width: c.tam, height: c.tam,
-                        boxShadow: c.campo,
-                        transform: `translateY(${j * 100}vh)`,
-                        animation: `nt-brilha ${c.brilho}s ease-in-out ${i * 1.3}s infinite`,
-                      }} />
-              ))}
-            </div>
-          ))}
-        </>
-      )}
+      {background === 'estrelas' && ceus.map((c, i) => (
+        <div key={i} className="nt-ceu"
+             style={{
+               backgroundImage: c.imagem,
+               '--nt-lado': `${c.lado}px`,
+               '--nt-alfa': c.alfa,
+               opacity: c.alfa * op,
+               animation: `nt-rola ${c.dur}s linear infinite, nt-brilha ${c.brilho}s ease-in-out ${i * 1.7}s infinite`,
+               animationPlayState: estado,
+             }} />
+      ))}
 
-      {background === 'aurora' && (
-        <>
-          <div className="nt-borrao" style={{ width: '46vw', height: '46vw', top: '-12vh', left: '-8vw', background: 'var(--nt-ac)', opacity: `calc(.33 * var(--nt-op))`, animation: 'nt-desliza 34s ease-in-out infinite' }} />
-          <div className="nt-borrao" style={{ width: '38vw', height: '38vw', bottom: '-14vh', right: '-6vw', background: 'var(--nt-ac4)', opacity: `calc(.26 * var(--nt-op))`, animation: 'nt-desliza 46s ease-in-out -12s infinite reverse' }} />
-          <div className="nt-borrao" style={{ width: '30vw', height: '30vw', top: '38%', left: '42%', background: 'var(--nt-ac)', opacity: `calc(.18 * var(--nt-op))`, animation: 'nt-desliza 58s ease-in-out -26s infinite' }} />
-        </>
-      )}
+      {background === 'aurora' && [
+        { t: '46vw', top: '-14vh', left: '-10vw', cor: 'var(--nt-ac)', a: 0.30, dur: 44, atraso: 0 },
+        { t: '38vw', bottom: '-16vh', right: '-8vw', cor: 'var(--nt-ac4)', a: 0.24, dur: 58, atraso: -15 },
+        { t: '30vw', top: '36%', left: '44%', cor: 'var(--nt-ac)', a: 0.16, dur: 72, atraso: -30 },
+      ].map((m, i) => (
+        <div key={i} className="nt-mancha"
+             style={{
+               width: m.t, height: m.t, top: m.top, bottom: m.bottom, left: m.left, right: m.right,
+               background: m.cor, opacity: m.a * op, filter: 'blur(64px)',
+               animation: `nt-anda ${m.dur}s ease-in-out ${m.atraso}s infinite`,
+               animationPlayState: estado,
+             }} />
+      ))}
 
-      {background === 'vagalumes' && (
-        <>
-          {Array.from({ length: 26 }, (_, i) => {
-            const esq = (aleatorio(i + 7) * 100).toFixed(2)
-            const dur = 16 + aleatorio(i + 21) * 22
-            const atraso = -aleatorio(i + 55) * dur
-            const tam = 2 + aleatorio(i + 88) * 3
-            return (
-              <span key={i}
-                    style={{
-                      position: 'absolute', bottom: 0, left: `${esq}vw`,
-                      width: tam, height: tam, borderRadius: 9999,
-                      background: 'var(--nt-ac4)',
-                      boxShadow: '0 0 8px 1px var(--nt-ac4)',
-                      opacity: `calc(.7 * var(--nt-op))`,
-                      animation: `nt-sobe ${dur}s linear ${atraso}s infinite`,
-                    }} />
-            )
-          })}
-        </>
-      )}
+      {background === 'vagalumes' && Array.from({ length: 16 }, (_, i) => {
+        const esq = (aleatorio(i + 7) * 100).toFixed(1)
+        const dur = 20 + aleatorio(i + 21) * 24
+        const tam = 2 + aleatorio(i + 88) * 2.5
+        return (
+          <span key={i} className="nt-vaga"
+                style={{
+                  bottom: '-6vh', left: `${esq}vw`, width: tam, height: tam,
+                  background: 'var(--nt-ac4)', boxShadow: '0 0 7px 1px var(--nt-ac4)',
+                  opacity: 0.7 * op,
+                  animation: `nt-vaga ${dur}s linear ${-aleatorio(i + 55) * dur}s infinite`,
+                  animationPlayState: estado,
+                }} />
+        )
+      })}
 
-      {background === 'malha' && (
-        <>
-          <div className="nt-borrao" style={{ width: '60vw', height: '60vw', top: '-20%', left: '-10%', background: 'var(--nt-ac)', opacity: `calc(.22 * var(--nt-op))`, animation: 'nt-respira 26s ease-in-out infinite' }} />
-          <div className="nt-borrao" style={{ width: '50vw', height: '50vw', bottom: '-18%', right: '-8%', background: 'var(--nt-ac4)', opacity: `calc(.2 * var(--nt-op))`, animation: 'nt-respira 32s ease-in-out -9s infinite reverse' }} />
-        </>
-      )}
+      {background === 'malha' && [
+        { t: '58vw', top: '-22%', left: '-12%', cor: 'var(--nt-ac)', a: 0.20, dur: 80, atraso: 0 },
+        { t: '48vw', bottom: '-20%', right: '-10%', cor: 'var(--nt-ac4)', a: 0.18, dur: 96, atraso: -34 },
+      ].map((m, i) => (
+        <div key={i} className="nt-mancha"
+             style={{
+               width: m.t, height: m.t, top: m.top, bottom: m.bottom, left: m.left, right: m.right,
+               background: m.cor, opacity: m.a * op, filter: 'blur(72px)',
+               animation: `nt-anda ${m.dur}s ease-in-out ${m.atraso}s infinite`,
+               animationPlayState: estado,
+             }} />
+      ))}
     </div>
   )
 }
