@@ -1006,5 +1006,7 @@ def get_dashboard_metrics(request):
 # =============================================================================
 
 from .painel_api import router as painel_router
+from .inicio_api import router as inicio_router
 
 api.add_router("", painel_router)
+api.add_router("", inicio_router)

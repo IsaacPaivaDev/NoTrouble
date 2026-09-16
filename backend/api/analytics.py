@@ -1,48 +1,69 @@
-from datetime import date
+from decimal import Decimal
+
 from django.shortcuts import get_object_or_404
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Q, Sum, F, Case, When, Value, DecimalField
+from django.db.models.functions import Coalesce
 from django.utils import timezone
+
 from .models import Board, Card, ActivityLog, Tag
+from .metricas import aplicar_escopo
+
+DEC = DecimalField(max_digits=12, decimal_places=2)
+
 
 class AnalyticsEngine:
+    """Metricas agregadas da empresa.
+
+    CORRECAO IMPORTANTE (modulo Painel de Roadmap):
+    ate aqui, "concluido" significava "esta na ultima etapa do quadro" e
+    "atrasado" nao excluia concluidos. Isso fazia Relatorios e Inicio
+    discordarem do Painel sobre os mesmos cards. A definicao agora e uma so,
+    vinda de metricas.py: concluido e is_completed.
+
+    Tambem trocado date.today() por timezone.localdate(), que respeita o
+    TIME_ZONE do settings — sem isso os numeros viram de dia as 21h.
+    """
+
+    # -- Saude de um quadro ------------------------------------------------
     @staticmethod
     def get_board_health(board_id, user):
         board = get_object_or_404(Board, id=board_id, company=user.company)
-        
-        cards = Card.objects.filter(stage__board=board)
-        
-        # 🚀 FILTRO DE CARGO: Membro só conta a saúde dos próprios cards
-        if user.role == 'MEMBER':
-            cards = cards.filter(assignee=user)
-        
-        total_cards = cards.count()
-        delayed_cards = cards.filter(due_date__lt=date.today()).count()
-        
-        last_stage = board.stages.order_by('-order').first()
-        completed_cards = cards.filter(stage=last_stage).count() if last_stage else 0
-        
-        active_cards = total_cards - completed_cards
+        hoje = timezone.localdate()
 
-        health_score = 100
-        if active_cards > 0:
-            penalty_ratio = delayed_cards / active_cards
-            health_score = max(0, int(100 - (penalty_ratio * 100)))
+        cards = aplicar_escopo(Card.objects.filter(stage__board=board), user)
+
+        numeros = cards.aggregate(
+            total=Count('id'),
+            concluidos=Count('id', filter=Q(is_completed=True)),
+            # Atrasado = prazo vencido E ainda nao concluido.
+            atrasados=Count('id', filter=Q(is_completed=False, due_date__date__lt=hoje)),
+        )
+
+        total = numeros['total'] or 0
+        concluidos = numeros['concluidos'] or 0
+        atrasados = numeros['atrasados'] or 0
+        ativos = total - concluidos
+
+        saude = 100
+        if ativos > 0:
+            saude = max(0, int(100 - ((atrasados / ativos) * 100)))
 
         return {
             "board_id": board.id,
             "board_name": board.name,
-            "total_cards": total_cards,
-            "active_cards": active_cards,
-            "completed_cards": completed_cards,
-            "delayed_cards": delayed_cards,
-            "health_score": health_score
+            "total_cards": total,
+            "active_cards": ativos,
+            "completed_cards": concluidos,
+            "delayed_cards": atrasados,
+            "health_score": saude,
         }
 
+    # -- Log ---------------------------------------------------------------
     @staticmethod
     def log_activity(user, action, description, card=None, board=None, details=None):
         if not user or not hasattr(user, 'company'):
             return
-            
+
         ActivityLog.objects.create(
             company=user.company,
             user=user,
@@ -50,97 +71,106 @@ class AnalyticsEngine:
             card=card,
             action=action,
             description=description,
-            details=details
+            details=details,
         )
 
-    # 🚀 --- MOTORES DO DASHBOARD DE OKRs COM FILTRO DE CARGOS --- 🚀
-
+    # -- Financeiro --------------------------------------------------------
     @staticmethod
     def get_financial_metrics(user):
-        cards_qs = Card.objects.filter(stage__board__company=user.company)
-        
-        # 🚀 Filtra os dinheiros apenas para os cards atribuídos ao Membro
-        if user.role == 'MEMBER':
-            cards_qs = cards_qs.filter(assignee=user)
-
-        metrics = cards_qs.aggregate(
-            total_estimated=Sum('estimated_value'),
-            total_invested=Sum('invested_value')
+        cards_qs = aplicar_escopo(
+            Card.objects.filter(stage__board__company=user.company), user
         )
-        estimated = metrics['total_estimated'] or 0
-        invested = metrics['total_invested'] or 0
-        
-        cards = cards_qs.exclude(estimated_value__isnull=True, invested_value__isnull=True)
-        
-        total_profit = 0
-        total_loss = 0
-        
-        for c in cards:
-            est = c.estimated_value or 0
-            inv = c.invested_value or 0
-            diff = est - inv
-            if diff >= 0:
-                total_profit += diff
-            else:
-                total_loss += abs(diff)
+
+        # Antes isto era um laco Python sobre todos os cards com valor. Agora o
+        # banco resolve: uma query, com a diferenca anotada e somada em dois
+        # baldes (lucro e prejuizo).
+        anotado = cards_qs.annotate(
+            diferenca=Coalesce(F('estimated_value'), Value(Decimal('0')), output_field=DEC)
+                      - Coalesce(F('invested_value'), Value(Decimal('0')), output_field=DEC)
+        )
+
+        numeros = anotado.aggregate(
+            estimado=Coalesce(Sum('estimated_value'), Value(Decimal('0')), output_field=DEC),
+            investido=Coalesce(Sum('invested_value'), Value(Decimal('0')), output_field=DEC),
+            lucro=Coalesce(Sum(Case(
+                When(Q(diferenca__gte=0) & ~Q(estimated_value__isnull=True, invested_value__isnull=True),
+                     then=F('diferenca')),
+                default=Value(Decimal('0')), output_field=DEC,
+            )), Value(Decimal('0')), output_field=DEC),
+            prejuizo=Coalesce(Sum(Case(
+                When(diferenca__lt=0, then=-F('diferenca')),
+                default=Value(Decimal('0')), output_field=DEC,
+            )), Value(Decimal('0')), output_field=DEC),
+        )
+
+        estimado = numeros['estimado'] or Decimal('0')
+        investido = numeros['investido'] or Decimal('0')
 
         return {
-            "total_estimated": float(estimated),
-            "total_invested": float(invested),
-            "total_profit": float(total_profit),
-            "total_loss": float(total_loss),
-            "balance": float(estimated - invested)
+            "total_estimated": float(estimado),
+            "total_invested": float(investido),
+            "total_profit": float(numeros['lucro'] or 0),
+            "total_loss": float(numeros['prejuizo'] or 0),
+            "balance": float(estimado - investido),
         }
 
+    # -- Produtividade -----------------------------------------------------
     @staticmethod
     def get_productivity_metrics(user):
+        hoje = timezone.localdate()
+
         logs = ActivityLog.objects.filter(company=user.company)
-        cards_qs = Card.objects.filter(stage__board__company=user.company)
-        
-        # 🚀 Filtro de Cargo
-        if user.role == 'MEMBER':
+        cards_qs = aplicar_escopo(
+            Card.objects.filter(stage__board__company=user.company), user
+        )
+
+        from .metricas import pode_ver_todos_os_cards
+        if not pode_ver_todos_os_cards(user):
             logs = logs.filter(user=user)
-            cards_qs = cards_qs.filter(assignee=user)
-        
-        created = logs.filter(action='CREATED', description__icontains="criou o card").count()
-        moved = logs.filter(action='MOVED').count()
-        deleted = logs.filter(action='DELETED', description__icontains="excluiu o card").count()
-        
-        today = timezone.now().date()
-        completed = 0
-        delayed = 0
-        
-        for board in Board.objects.filter(company=user.company).prefetch_related('stages'):
-            stages = list(board.stages.all().order_by('order'))
-            if stages:
-                last_stage = stages[-1]
-                completed += cards_qs.filter(stage=last_stage).count()
-                delayed += cards_qs.filter(stage__board=board, due_date__lt=today).exclude(stage=last_stage).count()
-        
-        total_cards = cards_qs.count()
-        on_time = (total_cards - completed) - delayed
+
+        atividade = logs.aggregate(
+            criados=Count('id', filter=Q(action='CREATED', description__icontains="criou o card")),
+            movidos=Count('id', filter=Q(action='MOVED')),
+            excluidos=Count('id', filter=Q(action='DELETED', description__icontains="excluiu o card")),
+        )
+
+        # Antes: um laco sobre os quadros com duas queries dentro (~38 queries
+        # com 19 quadros). Agora: uma agregacao so.
+        numeros = cards_qs.aggregate(
+            total=Count('id'),
+            concluidos=Count('id', filter=Q(is_completed=True)),
+            atrasados=Count('id', filter=Q(is_completed=False, due_date__date__lt=hoje)),
+        )
+
+        total = numeros['total'] or 0
+        concluidos = numeros['concluidos'] or 0
+        atrasados = numeros['atrasados'] or 0
+        no_prazo = (total - concluidos) - atrasados
 
         return {
-            "cards_created": created,
-            "cards_moved": moved,
-            "cards_deleted": deleted,
-            "current_completed": completed,
-            "current_delayed": max(0, delayed),
-            "current_on_time": max(0, on_time)
+            "cards_created": atividade['criados'] or 0,
+            "cards_moved": atividade['movidos'] or 0,
+            "cards_deleted": atividade['excluidos'] or 0,
+            "current_completed": concluidos,
+            "current_delayed": max(0, atrasados),
+            "current_on_time": max(0, no_prazo),
         }
 
+    # -- Etiquetas ---------------------------------------------------------
     @staticmethod
     def get_tags_distribution(user):
-        if user.role == 'MEMBER':
-            # Mostra as etiquetas apenas dos cards desse utilizador
-            tags = Tag.objects.filter(company=user.company).annotate(
-                card_count=Count('cards', filter=Q(cards__assignee=user))
-            ).filter(card_count__gt=0).order_by('-card_count')
-        else:
+        from .metricas import pode_ver_todos_os_cards
+
+        if pode_ver_todos_os_cards(user):
             tags = Tag.objects.filter(company=user.company).annotate(
                 card_count=Count('cards')
-            ).filter(card_count__gt=0).order_by('-card_count')
-            
+            )
+        else:
+            tags = Tag.objects.filter(company=user.company).annotate(
+                card_count=Count('cards', filter=Q(cards__assignee=user))
+            )
+
+        tags = tags.filter(card_count__gt=0).order_by('-card_count')
         return [{"name": t.name, "color": t.color, "value": t.card_count} for t in tags]
 
     @staticmethod
@@ -148,5 +178,5 @@ class AnalyticsEngine:
         return {
             "financial": AnalyticsEngine.get_financial_metrics(user),
             "productivity": AnalyticsEngine.get_productivity_metrics(user),
-            "tags": AnalyticsEngine.get_tags_distribution(user)
+            "tags": AnalyticsEngine.get_tags_distribution(user),
         }

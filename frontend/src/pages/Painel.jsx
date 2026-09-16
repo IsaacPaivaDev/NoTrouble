@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useBoards } from '../hooks/useBoards'
 import { apiFetch } from '../api/client'
 import PageLayout from '../components/PageLayout'
+import FrentesModal from '../components/FrentesModal'
 import { getColorFromString } from '../utils/formatters'
 import { IconX } from '../utils/icons'
 
@@ -83,6 +84,11 @@ export default function Painel() {
   const [busca, setBusca] = useState('')
   const [soPendencias, setSoPendencias] = useState(false)
 
+  // Lista COMPLETA de frentes. O endpoint do painel so devolve as que tem card,
+  // entao uma frente recem-criada e ainda vazia nao apareceria sem esta busca.
+  const [frentes, setFrentes] = useState([])
+  const [modalFrentes, setModalFrentes] = useState(false)
+
   const [salvando, setSalvando] = useState({})
   const [destaque, setDestaque] = useState(null)
   const [editandoBloqueio, setEditandoBloqueio] = useState(null)
@@ -117,7 +123,16 @@ export default function Painel() {
     }
   }, [activeBoardId, dias])
 
+  const carregarFrentes = useCallback(async () => {
+    if (!activeBoardId) return
+    try {
+      const res = await apiFetch(`/boards/${activeBoardId}/frentes/`)
+      if (res.ok) setFrentes(await res.json())
+    } catch { /* o painel funciona sem a lista; so o seletor fica vazio */ }
+  }, [activeBoardId])
+
   useEffect(() => { carregar() }, [carregar])
+  useEffect(() => { carregarFrentes() }, [carregarFrentes])
 
   useEffect(() => {
     if (!aviso) return
@@ -173,6 +188,21 @@ export default function Painel() {
       await carregar(true)
     } catch {
       setAviso('Nao foi possivel salvar o bloqueio. Tente de novo.')
+    } finally {
+      setSalvando(s => { const n = { ...s }; delete n[cardId]; return n })
+    }
+  }
+
+  const definirFrente = async (cardId, frenteId) => {
+    setSalvando(s => ({ ...s, [cardId]: true }))
+    try {
+      const res = await apiFetch(`/cards/${cardId}/frente/`, {
+        method: 'POST', body: JSON.stringify({ frente_id: frenteId || null }),
+      })
+      if (!res.ok) throw new Error()
+      await carregar(true)
+    } catch {
+      setAviso('Nao foi possivel mudar a frente. Tente de novo.')
     } finally {
       setSalvando(s => { const n = { ...s }; delete n[cardId]; return n })
     }
@@ -458,6 +488,12 @@ export default function Painel() {
         >
           So pendencias
         </button>
+        <button
+          onClick={() => setModalFrentes(true)}
+          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-colors motion-reduce:transition-none ${foco} ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100'}`}
+        >
+          Frentes{frentes.length > 0 ? ` (${frentes.length})` : ''}
+        </button>
         {temFiltro && (
           <button onClick={limparFiltros} className={`px-2.5 py-1.5 rounded-lg text-xs font-bold ${foco} ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-800'}`}>
             Limpar filtros
@@ -589,6 +625,18 @@ export default function Painel() {
                           ) : (
                             <span className={`text-[10px] ${txtFraco}`}>Sem dono</span>
                           )}
+                          <select
+                            value={k.frente_id || ''}
+                            onChange={e => definirFrente(k.id, e.target.value)}
+                            disabled={emSync}
+                            aria-label={`Frente de ${k.titulo}`}
+                            title="Frente de trabalho"
+                            style={esquemaNativo}
+                            className={`w-20 md:w-28 px-1.5 py-1 rounded-lg text-[11px] font-semibold border truncate transition-colors motion-reduce:transition-none ${foco} ${isDarkMode ? 'bg-slate-800 border-slate-600 text-slate-300' : 'bg-white border-slate-300 text-slate-600'}`}
+                          >
+                            <option value="">Sem frente</option>
+                            {frentes.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
+                          </select>
                           <button
                             onClick={() => {
                               setValorBloqueio(k.bloqueado_por || '')
@@ -646,6 +694,15 @@ export default function Painel() {
             ))}
           </ul>
         </section>
+      )}
+
+      {modalFrentes && (
+        <FrentesModal
+          boardId={activeBoardId}
+          frentes={frentes}
+          onFechar={() => setModalFrentes(false)}
+          onMudou={() => { carregarFrentes(); carregar(true) }}
+        />
       )}
 
       {/* Aviso transitorio de falha de gravacao -------------------------- */}

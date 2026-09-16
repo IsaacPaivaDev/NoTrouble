@@ -31,17 +31,21 @@ from ninja.errors import HttpError
 
 from .models import Card, Frente
 from .ownership import get_board_for_user, get_card_for_user, get_frente_for_user
+from .metricas import (
+    LIMIAR_SOBRECARGA_PADRAO,
+    data_local as _data_local,
+    janela_dias_uteis,
+    montar_semana,
+    nome_responsavel as _nome_responsavel,
+    status_card as _status_card,
+)
 
 router = Router(tags=["painel"])
-
-DIAS_SEMANA = ["Segunda", "Terca", "Quarta", "Quinta", "Sexta", "Sabado", "Domingo"]
-LIMIAR_SOBRECARGA_PADRAO = 3
 
 # Corte do payload: cards concluidos ha mais de N dias saem da listagem.
 # Os contadores continuam refletindo o total all-time.
 JANELA_CONCLUIDOS_DIAS = 30
 
-SEM_RESPONSAVEL = "Sem responsavel"
 COR_SEM_FRENTE = "#8A949E"
 ORDEM_SEM_FRENTE = 9999
 
@@ -154,38 +158,6 @@ def _exigir_plano(request) -> None:
         )
 
 
-def _data_local(valor) -> Optional[object]:
-    """due_date e DateTimeField e o banco guarda em UTC.
-
-    Sem esta conversao, um prazo de 22h em Fortaleza vira o dia seguinte e cai
-    na coluna errada da semana. Tambem evita comparar datetime com date.
-    """
-    if not valor:
-        return None
-    return timezone.localtime(valor).date()
-
-
-def _status_card(card, due_local, hoje) -> str:
-    """Precedencia fixa. O frontend confia nela — nao reordene sem motivo."""
-    if card.is_completed:
-        return "feito"
-    if (card.blocked_by or "").strip():
-        return "bloqueado"
-    if due_local is None:
-        return "sem_prazo"
-    if due_local < hoje:
-        return "vencido"
-    return "a_fazer"
-
-
-def _nome_responsavel(card) -> Optional[str]:
-    user = card.assignee
-    if not user:
-        return None
-    nome = f"{user.first_name} {user.last_name}".strip()
-    return nome or (user.username or "").split("@")[0] or None
-
-
 def _serializar(card, hoje) -> dict:
     due_local = _data_local(card.due_date)
     bloqueado_por = (card.blocked_by or "").strip()
@@ -258,50 +230,9 @@ def painel(
     serializados = {c.id: _serializar(c, hoje) for c in cards}
     due_por_card = {c.id: _data_local(c.due_date) for c in cards}
 
-    # ---- Janela de dias uteis a partir de hoje ---------------------------
-    janela, cursor = [], hoje
-    while len(janela) < dias:
-        if cursor.weekday() < 5:            # segunda a sexta
-            janela.append(cursor)
-        cursor += timedelta(days=1)
-
-    por_dia: Dict[object, list] = {d: [] for d in janela}
-    for c in cards:
-        if c.is_completed:
-            continue
-        d = due_por_card[c.id]
-        if d in por_dia:
-            por_dia[d].append(c)
-
-    semana = []
-    for d in janela:
-        do_dia = por_dia[d]
-
-        # Sobrecarga e por PESSOA, nao por dia. Oito cards entre cinco pessoas
-        # nao e gargalo; cinco cards na mesma pessoa e.
-        carga_por_pessoa: Dict[str, int] = {}
-        for c in do_dia:
-            nome = _nome_responsavel(c) or SEM_RESPONSAVEL
-            carga_por_pessoa[nome] = carga_por_pessoa.get(nome, 0) + 1
-
-        if carga_por_pessoa:
-            pessoa, maior = max(carga_por_pessoa.items(), key=lambda kv: kv[1])
-        else:
-            pessoa, maior = None, 0
-
-        estourou = maior >= limiar
-
-        semana.append({
-            "data_iso": d.isoformat(),
-            "dia": DIAS_SEMANA[d.weekday()],
-            "rotulo": d.strftime("%d/%m"),
-            "hoje": d == hoje,
-            "carga": len(do_dia),
-            "carga_maxima_responsavel": maior,
-            "responsavel_sobrecarregado": pessoa if estourou else None,
-            "sobrecarga": estourou,
-            "card_ids": [c.id for c in do_dia],
-        })
+    # ---- Faixa da semana (logica compartilhada com o Inicio) ------------
+    janela = janela_dias_uteis(hoje, dias)
+    semana = montar_semana(cards, janela, hoje, limiar)
 
     # ---- Agrupamento por frente -----------------------------------------
     frentes_do_board = list(board.frentes.all())
