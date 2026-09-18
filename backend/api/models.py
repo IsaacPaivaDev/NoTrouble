@@ -91,11 +91,23 @@ class User(AbstractUser):
     def has_full_access(self):
         return self.role == 'ADMIN'
 
-    # Gate do Painel de Roadmap (plano Business).
-    # ADMIN e dono da conta: sempre tem acesso, independente do flag sandbox,
-    # que nasce com default=False e travaria o proprio dono fora do recurso.
+    # --- Regras de acesso derivadas -------------------------------------
+    # Ficam AQUI, em um lugar so. A primeira versao tinha a regra do Painel em
+    # models.py e a de visibilidade de cards em metricas.py, com criterios
+    # diferentes — e foi assim que um MANAGER acabou sem ver o Painel enquanto
+    # via os cards de todo mundo.
+    #
+    # ADMIN e MANAGER sempre passam: para eles o flag sandbox e irrelevante e,
+    # como ele nasce False, checar so o flag trancaria o dono fora do proprio
+    # sistema. Os flags sao ajuste fino para MEMBER.
+
     def can_access_painel(self):
-        return self.role == 'ADMIN' or self.can_view_reports
+        """Painel de Roadmap e Relatorios."""
+        return self.role in ('ADMIN', 'MANAGER') or self.can_view_reports
+
+    def has_full_card_visibility(self):
+        """Ve os cards da empresa inteira, nao so os proprios."""
+        return self.role in ('ADMIN', 'MANAGER') or self.can_view_all_cards
 
 
 class VerificationCode(models.Model):

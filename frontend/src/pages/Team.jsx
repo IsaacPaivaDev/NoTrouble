@@ -3,8 +3,8 @@ import { useTheme } from '../contexts/ThemeContext'
 import { useBoards } from '../hooks/useBoards'
 import { apiFetch } from '../api/client'
 import PageLayout from '../components/PageLayout'
-import { mediaUrl } from '../utils/media'
-import { formatDate, getInitials, getColorFromString } from '../utils/formatters'
+import Avatar from '../components/Avatar'
+import { formatDate } from '../utils/formatters'
 
 export default function Team() {
   const { isDarkMode } = useTheme()
@@ -18,10 +18,48 @@ export default function Team() {
   const [inviteSuccess, setInviteSuccess] = useState(null)
   const [isLoading, setIsLoading] = useState(false)
 
+  // Permissoes vem de /team/permissions/, nao do /users/. Aquele schema e
+  // reaproveitado como assignee dentro de cada card — por os flags la inflaria
+  // o payload do quadro e mostraria a permissao de cada um para todo mundo.
+  const [permissoes, setPermissoes] = useState([])
+  const [abertoId, setAbertoId] = useState(null)
+  const [salvandoId, setSalvandoId] = useState(null)
+  const [erroPerm, setErroPerm] = useState(null)
+
+  const ehAdmin = currentUser?.role === 'ADMIN'
+
   const MAX_USERS = currentUser?.company?.max_users || 2
   const totalUsedLicenses = (teamMembers?.length || 0) + invites.length
 
   useEffect(() => { fetchTeamMembers(); fetchPendingInvites() }, [])
+  useEffect(() => { if (ehAdmin) buscarPermissoes() }, [ehAdmin])
+
+  const buscarPermissoes = () => {
+    apiFetch('/team/permissions/')
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setPermissoes(Array.isArray(d) ? d : []))
+      .catch(() => setPermissoes([]))
+  }
+
+  const alternarPermissao = (membro, campo, valor) => {
+    setSalvandoId(membro.id); setErroPerm(null)
+    setPermissoes(p => p.map(x => x.id === membro.id ? { ...x, [campo]: valor } : x))
+    apiFetch(`/team/users/${membro.id}/permissions/`, { method: 'PUT', body: JSON.stringify({ [campo]: valor }) })
+      .then(async r => {
+        const d = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(d.message || 'Nao foi possivel salvar.')
+        setPermissoes(p => p.map(x => x.id === membro.id ? { ...x, ...d } : x))
+      })
+      .catch(e => { setErroPerm(e.message); buscarPermissoes() })
+      .finally(() => setSalvandoId(null))
+  }
+
+  const PERMISSOES = [
+    { campo: 'can_view_reports',   titulo: 'Painel e Relatorios',
+      texto: 'Ve o Painel de Roadmap e a pagina de Relatorios.' },
+    { campo: 'can_view_all_cards', titulo: 'Cards de toda a equipe',
+      texto: 'Sem isto, os numeros do Inicio mostram so os cards da propria pessoa.' },
+  ]
 
   const fetchPendingInvites = () => {
     apiFetch('/team/invites/').then(r => r.json()).then(d => setInvites(Array.isArray(d) ? d : [])).catch(e => console.error("Erro ao carregar convites", e))
@@ -77,22 +115,64 @@ export default function Team() {
             <div className={`p-6 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}><h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Usuarios Ativos</h3></div>
             <div className="divide-y dark:divide-slate-700/50 divide-slate-100">
               {teamMembers.map(m => (
-                <div key={m.id} className={`p-6 flex items-center justify-between ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}>
+                <div key={m.id}>
+                <div className={`p-6 flex items-center justify-between ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}>
                   <div className="flex items-center gap-4">
-                    <div className="h-12 w-12 rounded-full overflow-hidden flex items-center justify-center font-bold text-white shadow-sm" style={{ backgroundColor: !m.avatar_url ? (getColorFromString(m.username) || '#3B82F6') : 'transparent' }}>
-                      {m.avatar_url ? <img src={mediaUrl(m.avatar_url)} alt="" className="h-full w-full object-cover" /> : (getInitials(m.first_name, m.last_name, m.username) || m.username.substring(0,2).toUpperCase())}
-                    </div>
+                    <Avatar url={m.avatar_url} firstName={m.first_name} lastName={m.last_name}
+                            username={m.username} size="h-12 w-12" textSize="text-sm" className="shadow-sm" />
                     <div>
                       <p className={`font-bold text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{m.first_name ? `${m.first_name} ${m.last_name}` : m.username}</p>
                       <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{m.email || m.username}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2">
                     {getRoleBadge(m.role)}
-                    {currentUser?.role === 'ADMIN' && currentUser.id !== m.id && (
-                      <button onClick={() => handleRemoveMember(m.id)} className="text-slate-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Remover">✕</button>
+                    {ehAdmin && currentUser.id !== m.id && (
+                      <>
+                        <button onClick={() => setAbertoId(abertoId === m.id ? null : m.id)} aria-expanded={abertoId === m.id}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${isDarkMode ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
+                          Permissoes
+                        </button>
+                        <button onClick={() => handleRemoveMember(m.id)} className="text-slate-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20" title="Remover">✕</button>
+                      </>
                     )}
                   </div>
+                </div>
+
+                {abertoId === m.id && (() => {
+                  const perm = permissoes.find(p => p.id === m.id) || {}
+                  const porCargo = perm.por_cargo
+                  return (
+                    <div className={`px-6 pb-6 -mt-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                      {porCargo && (
+                        <p className={`text-xs mb-3 p-3 rounded-lg ${isDarkMode ? 'bg-blue-900/20 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>
+                          {m.role === 'ADMIN' ? 'Administrador' : 'Gerencial'} ja tem acesso completo pelo cargo. Estes ajustes so mudam algo para o nivel Operacional.
+                        </p>
+                      )}
+                      {erroPerm && <p className="text-xs font-bold text-red-500 mb-3">{erroPerm}</p>}
+                      <div className="flex flex-col gap-2">
+                        {PERMISSOES.map(item => {
+                          const ligado = porCargo || Boolean(perm[item.campo])
+                          return (
+                            <div key={item.campo}
+                                 className={`flex items-start gap-3 p-3 rounded-xl border ${porCargo ? 'opacity-60' : ''} ${isDarkMode ? 'border-slate-700 bg-slate-900/40' : 'border-slate-200 bg-white'}`}>
+                              <button type="button" role="switch" aria-checked={ligado} aria-label={item.titulo}
+                                      disabled={porCargo || salvandoId === m.id}
+                                      onClick={() => alternarPermissao(m, item.campo, !perm[item.campo])}
+                                      className={`mt-0.5 w-9 h-5 rounded-full shrink-0 relative transition-colors motion-reduce:transition-none disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${ligado ? 'bg-blue-600' : (isDarkMode ? 'bg-slate-600' : 'bg-slate-300')}`}>
+                                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all motion-reduce:transition-none ${ligado ? 'left-[1.15rem]' : 'left-0.5'}`} />
+                              </button>
+                              <span className="min-w-0">
+                                <span className={`block font-bold text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{item.titulo}</span>
+                                <span className={`block text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{item.texto}</span>
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
                 </div>
               ))}
             </div>

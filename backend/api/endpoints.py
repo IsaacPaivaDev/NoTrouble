@@ -575,6 +575,112 @@ def remove_team_member(request, user_id: int):
 
 
 # =============================================================================
+# PERMISSOES DA EQUIPE
+#
+# Os flags sandbox existiam no model User desde sempre e nao havia NENHUM jeito
+# de altera-los pela aplicacao — so pelo Django admin. Estes dois endpoints
+# fecham esse buraco.
+#
+# Nao entram no UserSchema de proposito: aquele schema e reaproveitado como
+# `assignee` dentro de CardOutSchema, entao por-los la infla o payload de todo
+# card e expoe as permissoes de cada um para todos os colegas.
+# =============================================================================
+
+class TeamPermissionsSchema(Schema):
+    id: int
+    username: str
+    email: Optional[str] = None
+    first_name: str = ""
+    last_name: str = ""
+    role: str
+    avatar_url: Optional[str] = None
+
+    # O que esta gravado no banco
+    can_view_reports: bool = False
+    can_view_all_cards: bool = False
+
+    # O que vale na pratica: ADMIN e MANAGER passam pelo cargo, com flag ou sem.
+    # O frontend usa isto para mostrar o interruptor travado em vez de mentir
+    # que a pessoa esta sem acesso.
+    efetivo_reports: bool = False
+    efetivo_all_cards: bool = False
+    por_cargo: bool = False
+
+    @staticmethod
+    def resolve_avatar_url(obj):
+        return obj.avatar.url if getattr(obj, 'avatar', None) else None
+
+    @staticmethod
+    def resolve_efetivo_reports(obj):
+        return obj.can_access_painel()
+
+    @staticmethod
+    def resolve_efetivo_all_cards(obj):
+        return obj.has_full_card_visibility()
+
+    @staticmethod
+    def resolve_por_cargo(obj):
+        return obj.role in ('ADMIN', 'MANAGER')
+
+
+class TeamPermissionsIn(Schema):
+    can_view_reports: Optional[bool] = None
+    can_view_all_cards: Optional[bool] = None
+
+
+@api.get("/team/permissions/", response=List[TeamPermissionsSchema])
+def list_team_permissions(request):
+    if request.auth.role != 'ADMIN':
+        return api.create_response(
+            request, {"success": False, "message": "Apenas o Administrador ve as permissoes da equipe."}, status=403
+        )
+    return User.objects.filter(company=request.auth.company).order_by('role', 'first_name', 'username')
+
+
+@api.put("/team/users/{user_id}/permissions/")
+def update_team_permissions(request, user_id: int, payload: TeamPermissionsIn):
+    if request.auth.role != 'ADMIN':
+        return api.create_response(
+            request, {"success": False, "message": "Apenas o Administrador altera permissoes."}, status=403
+        )
+
+    alvo = get_object_or_404(User, id=user_id, company=request.auth.company)
+
+    # Trava contra tiro no pe: ninguem edita as proprias permissoes.
+    if alvo.id == request.auth.id:
+        return api.create_response(
+            request, {"success": False, "message": "Voce nao pode alterar as proprias permissoes."}, status=400
+        )
+
+    campos = []
+    if payload.can_view_reports is not None:
+        alvo.can_view_reports = payload.can_view_reports
+        campos.append('can_view_reports')
+    if payload.can_view_all_cards is not None:
+        alvo.can_view_all_cards = payload.can_view_all_cards
+        campos.append('can_view_all_cards')
+
+    if not campos:
+        return api.create_response(request, {"success": False, "message": "Nada para alterar."}, status=400)
+
+    alvo.save(update_fields=campos)
+
+    ActivityLog.objects.create(
+        company=request.auth.company, user=request.auth, action='UPDATED',
+        description=f"alterou as permissoes de {alvo.email or alvo.username}",
+        details={c: getattr(alvo, c) for c in campos},
+    )
+
+    return {
+        "success": True,
+        "can_view_reports": alvo.can_view_reports,
+        "can_view_all_cards": alvo.can_view_all_cards,
+        "efetivo_reports": alvo.can_access_painel(),
+        "efetivo_all_cards": alvo.has_full_card_visibility(),
+    }
+
+
+# =============================================================================
 # EMPRESA
 # =============================================================================
 

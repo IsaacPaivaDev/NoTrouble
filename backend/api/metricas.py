@@ -30,12 +30,11 @@ GRAVIDADE = {"vencido": 0, "bloqueado": 1, "a_fazer": 2, "sem_prazo": 3, "feito"
 def pode_ver_todos_os_cards(user):
     """Escopo dos numeros: a empresa inteira ou so os cards da pessoa.
 
-    ADMIN e MANAGER sempre veem tudo — era o comportamento anterior
-    (`role == 'MEMBER'`) e mexer nisso seria tirar acesso de quem ja tem.
-    Para MEMBER, quem decide passa a ser o flag can_view_all_cards, que existia
-    no model e nao era consultado em lugar nenhum.
+    A regra mora em User.has_full_card_visibility(). Aqui fica so o atalho, para
+    analytics.py e inicio_api.py nao precisarem conhecer o model — e para nao
+    existir uma segunda definicao concorrente, que ja causou problema antes.
     """
-    return user.role in ("ADMIN", "MANAGER") or bool(user.can_view_all_cards)
+    return user.has_full_card_visibility()
 
 
 def aplicar_escopo(queryset, user):
