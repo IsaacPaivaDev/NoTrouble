@@ -48,26 +48,46 @@ export default function PageLayout({
   const handleCreateBoard = () => { if (onCreateBoard) onCreateBoard(); else navigate('/board'); setIsSidebarOpen(false) }
   const isActive = (path) => path === '/' ? currentPath === '/' : currentPath.startsWith(path)
 
-  // Resultados da busca
+  // Normaliza texto: minusculo e sem acento ("Saídas" == "saidas")
+  const normalize = (str) => (str || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+
+  // Resultados da busca (titulo, descricao, tags, etapa, quadro e responsavel)
   const searchResults = useMemo(() => {
-    if (!searchQuery.trim() || searchQuery.length < 2) return []
-    const q = searchQuery.toLowerCase()
+    const q = normalize(searchQuery.trim())
+    if (!q) return []
+    const terms = q.split(/\s+/).filter(Boolean)
     const results = []
-    boards.forEach(board => {
-      board.stages?.forEach(stage => {
-        stage.cards?.forEach(card => {
-          if (card.title.toLowerCase().includes(q)) {
-            results.push({ ...card, boardId: board.id, boardName: board.name, stageName: stage.name })
+    ;(boards || []).forEach(board => {
+      ;(board.stages || []).forEach(stage => {
+        ;(stage.cards || []).forEach(card => {
+          const haystack = normalize([
+            card.title, card.description, stage.name, board.name,
+            ...(card.tags || []).map(t => t.name),
+            card.assignee?.first_name, card.assignee?.username,
+          ].join(' '))
+          if (terms.every(t => haystack.includes(t))) {
+            const titleHit = normalize(card.title).includes(q)
+            results.push({ ...card, boardId: board.id, boardName: board.name, stageName: stage.name, _score: titleHit ? 0 : 1 })
           }
         })
       })
     })
-    return results.slice(0, 8)
+    return results.sort((a, b) => a._score - b._score).slice(0, 12)
   }, [searchQuery, boards])
 
-  const openSearch = () => { setSearchOpen(true); setTimeout(() => inputRef.current?.focus(), 100) }
+  const [highlight, setHighlight] = useState(0)
+  useEffect(() => { setHighlight(0) }, [searchQuery])
+
+  const openSearch = () => { setSearchOpen(true); setTimeout(() => inputRef.current?.focus(), 50) }
   const closeSearch = () => { setSearchOpen(false); setSearchQuery('') }
   const goToCard = (result) => { closeSearch(); navigate(`/board?id=${result.boardId}&card=${result.id}`) }
+
+  // Setas navegam, Enter abre o card destacado
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlight(h => Math.min(h + 1, searchResults.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight(h => Math.max(h - 1, 0)) }
+    else if (e.key === 'Enter' && searchResults[highlight]) { e.preventDefault(); goToCard(searchResults[highlight]) }
+  }
 
   // Escape e click-outside
   useEffect(() => {
@@ -147,7 +167,7 @@ export default function PageLayout({
       >
         <AnimatedBackground />
 
-        <header className={`relative px-6 py-4 flex items-center justify-between shadow-sm z-10 transition-colors ${isDarkMode ? 'bg-slate-800/90 backdrop-blur-md border-b border-slate-700' : 'bg-white/90 backdrop-blur-md'}`}>
+        <header className={`relative px-6 py-4 flex items-center justify-between shadow-sm z-30 transition-colors ${isDarkMode ? 'bg-slate-800/90 backdrop-blur-md border-b border-slate-700' : 'bg-white/90 backdrop-blur-md'}`}>
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className={`p-2 rounded-lg transition-colors ${isDarkMode ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}><IconMenu /></button>
             <h1 className={`text-lg md:text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'} flex items-center gap-3 tracking-tight`}>
@@ -168,7 +188,7 @@ export default function PageLayout({
               {searchOpen ? (
                 <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all w-64 md:w-80 ${isDarkMode ? 'bg-slate-900 border-slate-600' : 'bg-white border-slate-300'}`}>
                   <IconSearch className="w-4 h-4 text-slate-400 shrink-0" />
-                  <input ref={inputRef} type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Buscar cards... (Esc pra fechar)" className={`flex-1 bg-transparent text-sm font-medium focus:outline-none ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} />
+                  <input ref={inputRef} type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={handleSearchKeyDown} placeholder="Buscar cards... (Esc pra fechar)" className={`flex-1 bg-transparent text-sm font-medium focus:outline-none ${isDarkMode ? 'text-white placeholder-slate-500' : 'text-slate-800 placeholder-slate-400'}`} />
                   <button onClick={closeSearch} className="text-slate-400 hover:text-slate-200"><IconX className="w-3.5 h-3.5" /></button>
                 </div>
               ) : (
@@ -178,12 +198,12 @@ export default function PageLayout({
                 </button>
               )}
 
-              {searchOpen && searchQuery.length >= 2 && (
-                <div className={`absolute top-full right-0 w-80 md:w-96 mt-2 rounded-xl border shadow-2xl z-50 overflow-hidden max-h-96 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
+              {searchOpen && searchQuery.trim().length >= 1 && (
+                <div className={`absolute top-full right-0 w-80 md:w-96 mt-2 rounded-xl border shadow-2xl z-[70] overflow-hidden max-h-96 overflow-y-auto ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-white border-slate-200'}`}>
                   {searchResults.length === 0 ? (
                     <p className={`p-4 text-sm text-center italic ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Nenhum card encontrado.</p>
-                  ) : searchResults.map(r => (
-                    <button key={r.id} onClick={() => goToCard(r)} className={`w-full text-left p-3 flex flex-col gap-1 transition-colors border-b last:border-b-0 ${isDarkMode ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-100 hover:bg-slate-50'}`}>
+                  ) : searchResults.map((r, i) => (
+                    <button key={r.id} onMouseDown={e => e.preventDefault()} onMouseEnter={() => setHighlight(i)} onClick={() => goToCard(r)} className={`w-full text-left p-3 flex flex-col gap-1 transition-colors border-b last:border-b-0 ${isDarkMode ? 'border-slate-700' : 'border-slate-100'} ${i === highlight ? (isDarkMode ? 'bg-slate-700' : 'bg-blue-50') : ''}`}>
                       <span className={`font-semibold text-sm truncate ${r.is_completed ? 'line-through opacity-60' : ''} ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{r.title}</span>
                       <div className="flex items-center gap-2">
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isDarkMode ? 'bg-slate-900 text-blue-400' : 'bg-blue-50 text-blue-600'}`}>{r.boardName}</span>
